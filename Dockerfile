@@ -45,6 +45,7 @@ RUN set -eux; \
       --enable-pthreads \
       --disable-xlib \
       --disable-libxcb \
+      --disable-x86asm \
       --disable-debug \
       --disable-doc \
       --disable-ffplay; \

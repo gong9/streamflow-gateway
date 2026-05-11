@@ -2,7 +2,7 @@
 .github
 .cargo/registry
 .cargo/git
-target
+/target
 **/node_modules
 **/dist
 !apps/web-demo/dist
