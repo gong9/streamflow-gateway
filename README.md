@@ -53,12 +53,23 @@ Open `http://127.0.0.1:5177`.
 
 ## Defaults
 
-- Host: `127.0.0.1`
-- Port: `5177`
-- Max upstreams: `50`
-- Max viewers: `500`
-- Cleanup TTL: `120s`
-- ZLMediaKit origin: `http://127.0.0.1:8080`
+Runtime settings are environment-driven. Copy `.env.example` to `.env` for Docker Compose deployments:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Local default | Docker Compose default | Meaning |
+| --- | --- | --- | --- |
+| `GATEWAY_HOST` | `127.0.0.1` | `0.0.0.0` | Gateway bind host |
+| `GATEWAY_PORT` | `5177` | `5177` | Gateway HTTP port |
+| `ZLM_HTTP_ORIGIN` | `http://127.0.0.1:8080` | `http://zlm:80` | ZLMediaKit HTTP origin |
+| `RTSP_PUSH_ORIGIN` | `rtsp://127.0.0.1:8554/live` | `rtsp://zlm:554/live` | RTSP push target prefix |
+| `MAX_UPSTREAMS` | `50` | `50` | Maximum active upstream sources |
+| `MAX_VIEWERS` | `500` | `500` | Maximum active viewers |
+| `CLEANUP_AFTER_SECS` | `120` | `120` | Idle stream cleanup TTL |
+| `VIEWER_BUFFER_BYTES` | `262144` | `262144` | Per-viewer buffer size |
+| `STREAMFLOW_SPAWN_PROCESSES` | `1` | `1` | Set `0` only for tests without FFmpeg |
 
 ## Testing
 
