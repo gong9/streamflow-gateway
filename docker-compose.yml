@@ -1,0 +1,38 @@
+services:
+  gateway:
+    build: .
+    image: streamflow-gateway:local
+    container_name: streamflow-gateway
+    restart: unless-stopped
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 5177
+      ZLM_HTTP_ORIGIN: http://zlm:80
+      RTSP_PUSH_ORIGIN: rtsp://zlm:554/live
+      MAX_UPSTREAMS: 50
+      MAX_VIEWERS: 500
+      CLEANUP_AFTER_SECS: 120
+    ports:
+      - "5177:5177"
+    depends_on:
+      - zlm
+    networks:
+      - streamflow
+
+  zlm:
+    image: zlmediakit/zlmediakit:master
+    container_name: streamflow-zlm
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8554:554"
+      - "1935:1935"
+      - "10000:10000/udp"
+    networks:
+      - streamflow
+
+networks:
+  streamflow:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24

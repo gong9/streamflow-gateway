@@ -1,0 +1,14 @@
+.git
+.github
+.cargo/registry
+.cargo/git
+target
+**/node_modules
+**/dist
+!apps/web-demo/dist
+!apps/web-demo/dist/**
+logs
+tmp
+.DS_Store
+playwright-report
+test-results

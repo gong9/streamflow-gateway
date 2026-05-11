@@ -1,0 +1,16 @@
+/target/
+**/node_modules/
+**/dist/
+.env
+.env.*
+logs/
+*.log
+.DS_Store
+/tmp/
+/playwright-report/
+/test-results/
+/.cargo-docker/
+/.docker-sources/
+/vendor/
+
+*.tsbuildinfo

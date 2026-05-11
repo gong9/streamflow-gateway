@@ -1,0 +1,9 @@
+services:
+  zlm-test:
+    image: zlmediakit/zlmediakit:master
+    container_name: streamflow-zlm-test
+    restart: unless-stopped
+    ports:
+      - "18080:80"
+      - "18554:554"
+      - "11935:1935"

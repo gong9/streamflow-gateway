@@ -1,0 +1,30 @@
+{
+  "name": "@streamflow/web-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test src/tests/e2e/playback.spec.ts",
+    "test:e2e:flow": "playwright test src/tests/e2e/frontend-flow.spec.ts"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "hls.js": "^1.5.20",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@testing-library/react": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "jsdom": "latest",
+    "vitest": "latest"
+  }
+}
