@@ -175,6 +175,18 @@ async fn proxy_hls(
         state.manager.mark_hls_access(stream_id).await;
     }
 
+    if let Some(local_path) = state.hls.local_path_for_hls(&path) {
+        if let Ok(bytes) = tokio::fs::read(&local_path).await {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static(content_type_for_hls_path(&path)),
+            );
+            return Ok((StatusCode::OK, headers, bytes).into_response());
+        }
+    }
+
     let query = request_uri
         .query()
         .map(|q| format!("?{q}"))
@@ -203,6 +215,16 @@ fn hls_stream_id(path: &str) -> Option<&str> {
     match (parts.next(), parts.next()) {
         (Some("live"), Some(stream_id)) if !stream_id.is_empty() => Some(stream_id),
         _ => None,
+    }
+}
+
+fn content_type_for_hls_path(path: &str) -> &'static str {
+    if path.ends_with(".m3u8") {
+        "application/vnd.apple.mpegurl"
+    } else if path.ends_with(".ts") {
+        "video/mp2t"
+    } else {
+        "application/octet-stream"
     }
 }
 

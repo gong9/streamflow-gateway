@@ -17,7 +17,7 @@ DOCKER_BUILDKIT ?= 1
 DOCKER_SERVER_ARCH ?= $(shell docker info --format '{{.Architecture}}' 2>/dev/null | sed -e 's/aarch64/arm64/' -e 's/x86_64/amd64/')
 DOCKER_PLATFORM ?= linux/$(DOCKER_SERVER_ARCH)
 
-.PHONY: help dev dev-api dev-web check test test-functional test-frontend-flow test-integration test-e2e load load-live soak soak-24h prepare-ffmpeg-sources docker-build docker-up docker-stack-up docker-down clean
+.PHONY: help dev dev-api dev-web check test test-functional test-frontend-flow test-integration test-e2e load load-live soak soak-24h prepare-ffmpeg-sources docker-build image-amd64 deploy-image release-amd64 docker-up docker-stack-up docker-down clean
 
 help:
 	@echo "streamflow-gateway commands:"
@@ -36,6 +36,9 @@ help:
 	@echo "  make soak-24h         24-hour health loop"
 	@echo "  make prepare-ffmpeg-sources Download FFmpeg $(FFMPEG_VERSION) + x264 sources"
 	@echo "  make docker-build     Build gateway + web demo image"
+	@echo "  make image-amd64      Cross-compile Linux amd64 binary and package image"
+	@echo "  make deploy-image     Upload prebuilt amd64 image and restart remote gateway"
+	@echo "  make release-amd64    Build amd64 image locally, upload, and restart remote"
 	@echo "  make docker-up        Start ZLMediaKit dependency"
 	@echo "  make docker-stack-up  Start gateway + ZLMediaKit"
 	@echo "  make clean            Remove local temp files"
@@ -111,6 +114,14 @@ docker-build: prepare-ffmpeg-sources
 	cargo vendor --locked vendor > .cargo-docker/config.toml
 	DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) docker build --platform=$(DOCKER_PLATFORM) --build-arg FFMPEG_VERSION=$(FFMPEG_VERSION) -t streamflow-gateway:local .
 
+image-amd64:
+	./scripts/build-amd64-local.sh
+
+deploy-image:
+	./scripts/deploy-image.sh
+
+release-amd64: image-amd64 deploy-image
+
 docker-up:
 	docker compose up -d zlm
 
@@ -121,4 +132,4 @@ docker-down:
 	docker compose down
 
 clean:
-	rm -rf logs tmp target/.tmp .cargo-docker vendor
+	rm -rf logs tmp target/.tmp .cargo-docker vendor .build dist/streamflow-gateway-amd64.tar.gz

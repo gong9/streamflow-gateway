@@ -402,7 +402,7 @@ impl StreamManager {
 }
 
 fn response_for(handle: &StreamHandle, mode: &str, reused: bool) -> StreamResponse {
-    let webcodecs_ok = mode == "webcodecs" || mode == "auto";
+    let webcodecs_ok = mode == "webcodecs";
     StreamResponse {
         stream_id: handle.id.clone(),
         play_mode: if webcodecs_ok { "webcodecs" } else { "hls" }.to_string(),

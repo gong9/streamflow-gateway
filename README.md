@@ -42,6 +42,23 @@ make docker-stack-up
 
 Open `http://127.0.0.1:5177`.
 
+## Deployment
+
+The recommended production path is to build the Linux amd64 image locally and upload it to the server:
+
+```bash
+make image-amd64
+make deploy-image
+```
+
+Or run both steps:
+
+```bash
+make release-amd64
+```
+
+This uses `cargo-zigbuild` to cross-compile the gateway and `Dockerfile.prebuilt` to package the image without compiling inside Docker. See `docs/deployment.md`.
+
 ## API
 
 - `POST /api/streams` creates or reuses a stream.
@@ -104,4 +121,6 @@ STREAM_URLS='rtmp://example/live/a,rtmp://example/live/b' STREAMS=2 VIEWERS=20 m
 
 ## Docker
 
-`Dockerfile` builds the React demo, compiles the Rust gateway, and ships one runtime image with FFmpeg installed. ZLMediaKit remains a sidecar dependency in `docker-compose.yml` so the gateway can scale independently from the media server.
+`Dockerfile` compiles the Rust gateway and ships one runtime image with FFmpeg installed.
+`Dockerfile.prebuilt` is the recommended deployment image path: it packages a locally cross-compiled Linux amd64 gateway binary plus the built React demo.
+ZLMediaKit remains a sidecar dependency in Compose so the gateway can scale independently from the media server.

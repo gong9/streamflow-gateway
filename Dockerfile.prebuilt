@@ -1,0 +1,16 @@
+FROM linuxserver/ffmpeg:latest
+
+WORKDIR /app
+
+COPY .build/amd64/streamflow-gateway /usr/local/bin/streamflow-gateway
+COPY apps/web-demo/dist /app/apps/web-demo/dist
+
+ENTRYPOINT []
+
+ENV GATEWAY_HOST=0.0.0.0 \
+    GATEWAY_PORT=5177 \
+    ZLM_HTTP_ORIGIN=http://127.0.0.1:8080 \
+    RTSP_PUSH_ORIGIN=rtsp://127.0.0.1:8554/live
+
+EXPOSE 5177
+CMD ["streamflow-gateway"]

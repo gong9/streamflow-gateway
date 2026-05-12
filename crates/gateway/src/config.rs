@@ -10,6 +10,8 @@ pub const DEFAULT_MAX_VIEWERS: usize = 500;
 pub const DEFAULT_CLEANUP_AFTER_SECS: u64 = 120;
 pub const DEFAULT_VIEWER_BUFFER_BYTES: usize = 256 * 1024;
 pub const DEFAULT_SPAWN_PROCESSES: bool = true;
+pub const DEFAULT_HLS_ROOT: &str = "/tmp/streamflow-hls";
+pub const DEFAULT_WS_UPSTREAM: bool = false;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -22,6 +24,8 @@ pub struct Config {
     pub cleanup_after_secs: u64,
     pub viewer_buffer: usize,
     pub spawn_processes: bool,
+    pub hls_root: String,
+    pub ws_upstream: bool,
 }
 
 impl Default for Config {
@@ -36,6 +40,8 @@ impl Default for Config {
             cleanup_after_secs: DEFAULT_CLEANUP_AFTER_SECS,
             viewer_buffer: DEFAULT_VIEWER_BUFFER_BYTES,
             spawn_processes: DEFAULT_SPAWN_PROCESSES,
+            hls_root: DEFAULT_HLS_ROOT.to_string(),
+            ws_upstream: DEFAULT_WS_UPSTREAM,
         }
     }
 }
@@ -53,6 +59,8 @@ impl Config {
             cleanup_after_secs: env_parse("CLEANUP_AFTER_SECS", default.cleanup_after_secs),
             viewer_buffer: env_parse("VIEWER_BUFFER_BYTES", default.viewer_buffer),
             spawn_processes: env_bool("STREAMFLOW_SPAWN_PROCESSES", default.spawn_processes),
+            hls_root: env_string("HLS_ROOT", default.hls_root),
+            ws_upstream: env_bool("STREAMFLOW_WS_UPSTREAM", default.ws_upstream),
         }
     }
 }

@@ -24,7 +24,7 @@ Response:
 ```json
 {
   "stream_id": "uuid",
-  "play_mode": "webcodecs",
+  "play_mode": "hls",
   "ws_url": "/ws/streams/uuid",
   "hls_url": "/hls/live/uuid/hls.m3u8",
   "codec": "h264",
@@ -42,6 +42,7 @@ Releases the caller's intent to watch the stream. The upstream is not killed imm
 
 ## WS /ws/streams/:streamId
 
-Sends JSON control events and binary media chunks. The binary protocol is intentionally internal for v0.1 and will be formalized after the WebCodecs parser is complete.
+Sends JSON control events and binary media chunks when `STREAMFLOW_WS_UPSTREAM=1`.
+The stable browser playback path is HLS.
 
 If the gateway has reached `MAX_VIEWERS`, the upgrade is rejected with HTTP `429`.
