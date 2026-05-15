@@ -56,23 +56,44 @@ let patchedBundle = bundle.replace(
 );
 
 patchedBundle = patchedBundle.replace(
-  `if (canvas) {
+  `const videoFrame = new VideoFrame(data, {
+                codedWidth: width,
+                codedHeight: height,
+                format: "I420",
+                timestamp: pts
+              });
+              if (canvas) {
                 gl?.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
                 gl?.commit();
               } else {
                 self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
               }`,
-  `if (canvas) {
-                if (pendingFrame) {
-                  pendingFrame.close();
-                  droppedFrames += 1;
-                }
-                self.postMessage({ type: "decoded", pts, at: performance.now() });
-                pendingFrame = videoFrame;
-                pendingPts = pts;
+  `if (packedYuvMode && !canvas) {
+                self.postMessage({ type: "packedYuvData", data: data.buffer, width, height, timestamp: pts }, [data.buffer]);
               } else {
-                self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
+                const videoFrame = new VideoFrame(data, {
+                  codedWidth: width,
+                  codedHeight: height,
+                  format: "I420",
+                  timestamp: pts
+                });
+                if (canvas) {
+                  if (pendingFrame) {
+                    pendingFrame.close();
+                    droppedFrames += 1;
+                  }
+                  self.postMessage({ type: "decoded", pts, at: performance.now() });
+                  pendingFrame = videoFrame;
+                  pendingPts = pts;
+                } else {
+                  self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
+                }
               }`
+);
+
+patchedBundle = patchedBundle.replace(
+  `const { canvas, wasmScript, wasmBinary } = evt.data;`,
+  `const { canvas, wasmScript, wasmBinary, packedYuvMode = false } = evt.data;`
 );
 
 patchedBundle = patchedBundle.replace(
@@ -91,11 +112,41 @@ patchedBundle = patchedBundle.replace(
           } else if (evt.data.type === "yuvData") {
             const { videoFrame } = evt.data;
             this.emit("videoFrame" /* VideoFrame */, videoFrame);
+          } else if (evt.data.type === "packedYuvData") {
+            this.emit("packedYuvData", evt.data);
           } else if (evt.data.type === "decoded") {
             this.emit("decoded", evt.data);
           } else if (evt.data.type === "rendered") {
             this.emit("rendered", evt.data);
           }`
+);
+
+patchedBundle = patchedBundle.replace(
+  `  constructor(createModule, wasmBinary, workerMode = false, canvas, yuvMode = false) {
+    super();
+    this.createModule = createModule;
+    this.wasmBinary = wasmBinary;
+    this.workerMode = workerMode;
+    this.canvas = canvas;
+    this.yuvMode = yuvMode;`,
+  `  constructor(createModule, wasmBinary, workerMode = false, canvas, yuvMode = false, packedYuvMode = false) {
+    super();
+    this.createModule = createModule;
+    this.wasmBinary = wasmBinary;
+    this.workerMode = workerMode;
+    this.canvas = canvas;
+    this.yuvMode = yuvMode;
+    this.packedYuvMode = packedYuvMode;`
+);
+
+patchedBundle = patchedBundle.replace(
+  `this.worker.postMessage({ type: "init", canvas: offsetCanvas, wasmScript: this.createModule.toString(), wasmBinary }, offsetCanvas ? [offsetCanvas, wasmBinary] : [wasmBinary]);`,
+  `this.worker.postMessage({ type: "init", canvas: offsetCanvas, wasmScript: this.createModule.toString(), wasmBinary, packedYuvMode: this.packedYuvMode }, offsetCanvas ? [offsetCanvas, wasmBinary] : [wasmBinary]);`
+);
+
+patchedBundle = patchedBundle.replace(
+  `super(videodec_simd_default, opt?.wasmPath ? fetch(opt.wasmPath).then((res) => res.arrayBuffer()) : void 0, opt?.workerMode, opt?.canvas, opt?.yuvMode);`,
+  `super(videodec_simd_default, opt?.wasmPath ? fetch(opt.wasmPath).then((res) => res.arrayBuffer()) : void 0, opt?.workerMode, opt?.canvas, opt?.yuvMode, opt?.packedYuvMode);`
 );
 
 patchedBundle = patchedBundle.replace(

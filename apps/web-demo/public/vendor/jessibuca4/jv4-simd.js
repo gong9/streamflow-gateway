@@ -1394,7 +1394,7 @@ function WorkerScripts() {
   var decoder;
   self.onmessage = (evt) => {
     if (evt.data.type === "init") {
-      const { canvas, wasmScript, wasmBinary } = evt.data;
+      const { canvas, wasmScript, wasmBinary, packedYuvMode = false } = evt.data;
       const gl = canvas?.getContext("2d");
       let width = 0;
       let height = 0;
@@ -1445,22 +1445,26 @@ function WorkerScripts() {
               data.set(yBuf);
               data.set(uBuf, size);
               data.set(vBuf, size + halfSize);
-              const videoFrame = new VideoFrame(data, {
-                codedWidth: width,
-                codedHeight: height,
-                format: "I420",
-                timestamp: pts
-              });
-              if (canvas) {
-                if (pendingFrame) {
-                  pendingFrame.close();
-                  droppedFrames += 1;
-                }
-                self.postMessage({ type: "decoded", pts, at: performance.now() });
-                pendingFrame = videoFrame;
-                pendingPts = pts;
+              if (packedYuvMode && !canvas) {
+                self.postMessage({ type: "packedYuvData", data: data.buffer, width, height, timestamp: pts }, [data.buffer]);
               } else {
-                self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
+                const videoFrame = new VideoFrame(data, {
+                  codedWidth: width,
+                  codedHeight: height,
+                  format: "I420",
+                  timestamp: pts
+                });
+                if (canvas) {
+                  if (pendingFrame) {
+                    pendingFrame.close();
+                    droppedFrames += 1;
+                  }
+                  self.postMessage({ type: "decoded", pts, at: performance.now() });
+                  pendingFrame = videoFrame;
+                  pendingPts = pts;
+                } else {
+                  self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
+                }
               }
             }
           });
@@ -1478,13 +1482,14 @@ function WorkerScripts() {
   };
 }
 var VideoDecoderSoftBase = class extends FSM {
-  constructor(createModule, wasmBinary, workerMode = false, canvas, yuvMode = false) {
+  constructor(createModule, wasmBinary, workerMode = false, canvas, yuvMode = false, packedYuvMode = false) {
     super();
     this.createModule = createModule;
     this.wasmBinary = wasmBinary;
     this.workerMode = workerMode;
     this.canvas = canvas;
     this.yuvMode = yuvMode;
+    this.packedYuvMode = packedYuvMode;
     this.module = {};
     this.width = 0;
     this.height = 0;
@@ -1496,7 +1501,7 @@ var VideoDecoderSoftBase = class extends FSM {
       const offsetCanvas = this.canvas?.transferControlToOffscreen();
       const wasmBinary = await this.wasmBinary;
       console.warn("worker mode", wasmBinary);
-      this.worker.postMessage({ type: "init", canvas: offsetCanvas, wasmScript: this.createModule.toString(), wasmBinary }, offsetCanvas ? [offsetCanvas, wasmBinary] : [wasmBinary]);
+      this.worker.postMessage({ type: "init", canvas: offsetCanvas, wasmScript: this.createModule.toString(), wasmBinary, packedYuvMode: this.packedYuvMode }, offsetCanvas ? [offsetCanvas, wasmBinary] : [wasmBinary]);
       return new Promise((resolve) => {
         this.worker.onmessage = (evt) => {
           if (evt.data.type === "ready") {
@@ -1506,6 +1511,8 @@ var VideoDecoderSoftBase = class extends FSM {
           } else if (evt.data.type === "yuvData") {
             const { videoFrame } = evt.data;
             this.emit("videoFrame" /* VideoFrame */, videoFrame);
+          } else if (evt.data.type === "packedYuvData") {
+            this.emit("packedYuvData", evt.data);
           } else if (evt.data.type === "decoded") {
             this.emit("decoded", evt.data);
           } else if (evt.data.type === "rendered") {
@@ -3498,7 +3505,7 @@ var videodec_simd_default = Module;
 // node_modules/jv4-decoder/src/video_decoder_soft_simd.ts
 var VideoDecoderSoftSIMD = class extends VideoDecoderSoftBase {
   constructor(opt) {
-    super(videodec_simd_default, opt?.wasmPath ? fetch(opt.wasmPath).then((res) => res.arrayBuffer()) : void 0, opt?.workerMode, opt?.canvas, opt?.yuvMode);
+    super(videodec_simd_default, opt?.wasmPath ? fetch(opt.wasmPath).then((res) => res.arrayBuffer()) : void 0, opt?.workerMode, opt?.canvas, opt?.yuvMode, opt?.packedYuvMode);
   }
 };
 

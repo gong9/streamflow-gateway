@@ -30,7 +30,9 @@ export interface TurboFrame {
   v: Uint8Array;
   width: number;
   height: number;
+  codedHeight?: number;
   pts: number;
+  backing?: ArrayBuffer;
   close?: () => void;
 }
 
@@ -45,6 +47,7 @@ export interface TurboPlaybackMetrics {
   renderCostMs: number | null;
   frameP95Ms: number | null;
   queueDepth: number;
+  decodeQueueDepth: number;
   droppedFrames: number;
   clockDelayMs: number | null;
   mediaLagMs: number | null;

@@ -22,6 +22,7 @@ export class PlaybackProfiler {
   private decodedBurstMax = 0;
   private droppedFrames = 0;
   private queueDepth = 0;
+  private decodeQueueDepth = 0;
   private clockDelayMs: number | null = null;
   private mediaLagMs: number | null = null;
   private longTasks: Array<{ at: number; duration: number }> = [];
@@ -105,6 +106,10 @@ export class PlaybackProfiler {
     this.queueDepth = depth;
   }
 
+  setDecodeQueueDepth(depth: number) {
+    this.decodeQueueDepth = depth;
+  }
+
   setClockStats(stats: { delayMs?: number | null; mediaLagMs?: number | null }) {
     if (stats.delayMs !== undefined) this.clockDelayMs = stats.delayMs;
     if (stats.mediaLagMs !== undefined) this.mediaLagMs = stats.mediaLagMs;
@@ -124,6 +129,7 @@ export class PlaybackProfiler {
       renderCostMs: average(this.costs.render),
       frameP95Ms: percentile(this.frameIntervals, 0.95),
       queueDepth: this.queueDepth,
+      decodeQueueDepth: this.decodeQueueDepth,
       droppedFrames: this.droppedFrames,
       clockDelayMs: this.clockDelayMs,
       mediaLagMs: this.mediaLagMs,

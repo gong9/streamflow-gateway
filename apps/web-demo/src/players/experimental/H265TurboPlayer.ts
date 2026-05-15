@@ -96,6 +96,10 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     this.profiler?.mark('demux');
   }
 
+  setDecodeQueueDepth(depth: number) {
+    this.profiler?.setDecodeQueueDepth(depth);
+  }
+
   measureDecode<T>(fn: () => T): T {
     if (!this.profiler) return fn();
     return this.profiler.measure('decode', fn);

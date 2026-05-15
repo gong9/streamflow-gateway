@@ -16,6 +16,7 @@ interface Jv4Module {
   };
   VideoDecoderSoftSIMD: new (options?: {
     yuvMode?: boolean;
+    packedYuvMode?: boolean;
     workerMode?: boolean;
     canvas?: HTMLCanvasElement;
     wasmPath?: string;
@@ -41,6 +42,7 @@ interface Jv4VideoDecoder {
   close(): void;
   on(event: 'videoCodecInfo', callback: (info: { width: number; height: number }) => void): void;
   on(event: 'videoFrame', callback: (frame: unknown) => void): void;
+  on(event: 'packedYuvData', callback: (frame: PackedYuvLikeFrame) => void): void;
   on(event: 'decoded', callback: (info: { pts?: number; at?: number }) => void): void;
   on(event: 'rendered', callback: (info: { pts?: number; at?: number; costMs?: number; dropped?: number }) => void): void;
   on(event: 'error', callback: (error: unknown) => void): void;
@@ -54,6 +56,13 @@ interface YuvLikeFrame {
   height?: number;
 }
 
+interface PackedYuvLikeFrame {
+  data: ArrayBuffer;
+  width: number;
+  height: number;
+  timestamp?: number;
+}
+
 export interface H265WasmDecodeRuntimeOptions {
   rawUrl: string;
   canvas: HTMLCanvasElement;
@@ -64,6 +73,8 @@ export interface H265WasmDecodeRuntimeOptions {
   onError?: (message: string) => void;
   preferDirectWorkerCanvas?: boolean;
   preferWorkerRender?: boolean;
+  preferPackedYuv?: boolean;
+  preferDecodeScheduler?: boolean;
 }
 
 const vendorModuleUrl = '/vendor/jessibuca4/jv4-simd.js';
@@ -86,6 +97,10 @@ export class H265WasmDecodeRuntime {
   private metricsTimer = 0;
   private waitingForKeyFrame = true;
   private keyFrameWaitStartedAt = 0;
+  private decodeQueue: EncodedVideoChunkInit[] = [];
+  private decodeTimer = 0;
+  private decodeInFlight = false;
+  private readonly maxDecodeQueue = 72;
 
   constructor(private readonly options: H265WasmDecodeRuntimeOptions) {
     this.width = options.width ?? 1280;
@@ -127,6 +142,7 @@ export class H265WasmDecodeRuntime {
     this.options.onStatus?.('正在初始化 SIMD 软解码...');
     this.decoder = new jv4.VideoDecoderSoftSIMD({
       yuvMode: this.shouldOutputYuvFrames(),
+      packedYuvMode: this.options.preferPackedYuv,
       workerMode: true,
       canvas: this.options.preferDirectWorkerCanvas ? this.options.canvas : undefined,
       wasmPath
@@ -175,7 +191,7 @@ export class H265WasmDecodeRuntime {
         this.profiler?.mark('demux');
         if (this.decoder?.config) {
           if (this.shouldDropUntilKeyFrame(chunk)) return;
-          this.decoder.decode(chunk);
+          this.enqueueDecodePacket(chunk);
         }
       }
     }), { signal: this.abort.signal }).catch((err) => {
@@ -205,6 +221,10 @@ export class H265WasmDecodeRuntime {
     this.turbo?.destroy();
     this.profiler?.stop();
     if (this.metricsTimer) window.clearInterval(this.metricsTimer);
+    if (this.decodeTimer) window.clearTimeout(this.decodeTimer);
+    this.decodeQueue = [];
+    this.decodeTimer = 0;
+    this.decodeInFlight = false;
     this.conn = null;
     this.decoder = null;
     this.turbo = null;
@@ -226,6 +246,10 @@ export class H265WasmDecodeRuntime {
       this.firstFrameSeen = false;
       this.waitingForKeyFrame = true;
       this.keyFrameWaitStartedAt = 0;
+      this.decodeQueue = [];
+      if (this.decodeTimer) window.clearTimeout(this.decodeTimer);
+      this.decodeTimer = 0;
+      this.decodeInFlight = false;
       if (this.formatFallbackTimer) window.clearTimeout(this.formatFallbackTimer);
       this.formatFallbackTimer = 0;
 
@@ -233,6 +257,7 @@ export class H265WasmDecodeRuntime {
       if (this.destroyed) return;
       this.decoder = new jv4.VideoDecoderSoftSIMD({
         yuvMode: this.shouldOutputYuvFrames(),
+        packedYuvMode: this.options.preferPackedYuv,
         workerMode: true,
         canvas: this.options.preferDirectWorkerCanvas ? this.options.canvas : undefined,
         wasmPath
@@ -291,6 +316,7 @@ export class H265WasmDecodeRuntime {
       this.options.onStatus?.(`已获取视频参数 ${this.width}x${this.height}`);
     });
     decoder.on('videoFrame', (frame) => this.handleDecodedFrame(frame));
+    decoder.on('packedYuvData', (frame) => this.handlePackedYuvFrame(frame));
     decoder.on('decoded', () => {
       if (!this.options.preferDirectWorkerCanvas || this.destroyed) return;
       this.decodedFrames += 1;
@@ -314,7 +340,7 @@ export class H265WasmDecodeRuntime {
   }
 
   private shouldOutputYuvFrames() {
-    return !this.options.preferDirectWorkerCanvas && !this.options.preferWorkerRender;
+    return !this.options.preferDirectWorkerCanvas && !this.options.preferWorkerRender && !this.options.preferPackedYuv;
   }
 
   private shouldDropUntilKeyFrame(chunk: EncodedVideoChunkInit) {
@@ -337,6 +363,95 @@ export class H265WasmDecodeRuntime {
 
   private visibleHeight() {
     return this.options.height ?? this.height;
+  }
+
+  private enqueueDecodePacket(chunk: EncodedVideoChunkInit) {
+    if (!this.options.preferDecodeScheduler) {
+      this.decoder?.decode(chunk);
+      return;
+    }
+
+    this.decodeQueue.push(chunk);
+    this.trimDecodeQueue();
+    this.turbo?.setDecodeQueueDepth(this.decodeQueue.length);
+    this.scheduleDecodePump(0);
+  }
+
+  private scheduleDecodePump(delayMs: number) {
+    if (this.destroyed || this.decodeTimer || this.decodeInFlight) return;
+    this.decodeTimer = window.setTimeout(() => {
+      this.decodeTimer = 0;
+      this.pumpDecodeQueue();
+    }, delayMs);
+  }
+
+  private pumpDecodeQueue() {
+    if (this.destroyed || this.decodeInFlight || !this.decoder?.config) return;
+    const packet = this.decodeQueue.shift();
+    if (!packet) return;
+    this.turbo?.setDecodeQueueDepth(this.decodeQueue.length);
+
+    this.decodeInFlight = true;
+    try {
+      this.decoder.decode(packet);
+    } finally {
+      this.decodeInFlight = false;
+    }
+
+    if (this.decodeQueue.length > 0) {
+      this.scheduleDecodePump(this.nextDecodeDelayMs());
+    } else {
+      this.turbo?.setDecodeQueueDepth(0);
+    }
+  }
+
+  private nextDecodeDelayMs() {
+    const depth = this.decodeQueue.length;
+    if (depth >= 48) return 0;
+    if (depth >= 24) return 2;
+    if (depth >= 12) return 4;
+    return 6;
+  }
+
+  private trimDecodeQueue() {
+    if (this.decodeQueue.length <= this.maxDecodeQueue) return;
+
+    let dropped = 0;
+    while (this.decodeQueue.length > this.maxDecodeQueue) {
+      const index = this.decodeQueue.findIndex((packet) => packet.type !== 'key');
+      if (index < 0) break;
+      this.decodeQueue.splice(index, 1);
+      dropped += 1;
+    }
+    if (dropped > 0) {
+      this.turbo?.setDecodeQueueDepth(this.decodeQueue.length);
+      this.options.onStatus?.(`解码队列过深，已丢弃 ${dropped} 个旧 delta 包`, false);
+    }
+  }
+
+  private handlePackedYuvFrame(frame: PackedYuvLikeFrame) {
+    if (this.destroyed) return;
+    this.decodedFrames += 1;
+    if (!this.firstFrameSeen) {
+      this.firstFrameSeen = true;
+      this.options.onStatus?.('Packed YUV 正在播放', true);
+    }
+
+    const width = frame.width || this.width;
+    const codedHeight = frame.height || this.height;
+    const visibleHeight = Math.min(this.visibleHeight(), codedHeight);
+    const ySize = width * codedHeight;
+    const uvSize = ySize >> 2;
+    this.turbo?.pushDecodedFrame({
+      y: new Uint8Array(frame.data, 0, ySize),
+      u: new Uint8Array(frame.data, ySize, uvSize),
+      v: new Uint8Array(frame.data, ySize + uvSize, uvSize),
+      width,
+      height: visibleHeight,
+      codedHeight,
+      pts: frame.timestamp ?? performance.now(),
+      backing: frame.data
+    });
   }
 }
 
