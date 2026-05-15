@@ -100,6 +100,24 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     return this.queue?.depth ?? 0;
   }
 
+  getRenderClockState() {
+    const now = performance.now();
+    const targetDepth = this.options.preferLowLatencyWaterline ? this.targetQueueDepth() : this.legacyTrimTargetFrames;
+    const highWaterDepth = this.options.preferLowLatencyWaterline
+      ? this.highWaterQueueDepth(targetDepth)
+      : this.legacyTrimQueueFrames;
+
+    return {
+      queueDepth: this.queue?.depth ?? 0,
+      targetDepth,
+      highWaterDepth,
+      playbackStarted: this.playbackStarted,
+      renderInFlight: this.renderInFlight,
+      delayUntilNextRenderMs: this.playbackStarted ? Math.max(0, this.nextRenderAt - now) : 0,
+      frameIntervalMs: this.targetFrameIntervalMs
+    };
+  }
+
   markInputFrame() {
     this.profiler?.mark('input');
   }

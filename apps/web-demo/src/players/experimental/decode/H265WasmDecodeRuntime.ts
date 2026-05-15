@@ -474,10 +474,15 @@ export class H265WasmDecodeRuntime {
       return;
     }
 
-    const renderDepth = this.turbo.getRenderQueueDepth();
-    if (renderDepth >= 8) {
-      this.trimOutputQueue(4);
-      this.scheduleOutputPump(18);
+    const clock = this.turbo.getRenderClockState();
+    if (clock.queueDepth >= clock.highWaterDepth) {
+      this.trimOutputQueue(Math.max(2, clock.targetDepth));
+      this.scheduleOutputPump(this.nextRenderClockDelayMs(clock));
+      return;
+    }
+
+    if (clock.queueDepth >= clock.targetDepth) {
+      this.scheduleOutputPump(this.nextRenderClockDelayMs(clock));
       return;
     }
 
@@ -497,14 +502,22 @@ export class H265WasmDecodeRuntime {
   }
 
   private nextOutputDelayMs() {
-    const renderDepth = this.turbo?.getRenderQueueDepth() ?? 0;
+    const clock = this.turbo?.getRenderClockState();
+    const renderDepth = clock?.queueDepth ?? 0;
+    const targetDepth = clock?.targetDepth ?? 4;
     const outputDepth = this.outputQueue.length;
     const minDelay = this.nextInitialOutputDelayMs();
-    if (renderDepth >= 6) return 18;
-    if (renderDepth >= 4) return 14;
+    if (renderDepth >= targetDepth) return this.nextRenderClockDelayMs(clock);
+    if (renderDepth >= targetDepth - 1) return Math.max(10, minDelay);
     if (outputDepth >= 8) return Math.max(10, minDelay);
     if (outputDepth >= 4) return Math.max(12, minDelay);
     return Math.max(14, minDelay);
+  }
+
+  private nextRenderClockDelayMs(clock = this.turbo?.getRenderClockState()) {
+    const renderDelay = clock?.delayUntilNextRenderMs ?? this.minOutputIntervalMs;
+    const guardMs = clock?.renderInFlight ? 6 : 2;
+    return Math.max(this.nextInitialOutputDelayMs(), Math.min(24, renderDelay + guardMs));
   }
 
   private nextInitialOutputDelayMs() {
@@ -527,9 +540,11 @@ export class H265WasmDecodeRuntime {
   }
 
   private currentOutputQueueLimit() {
-    const renderDepth = this.turbo?.getRenderQueueDepth() ?? 0;
-    if (renderDepth >= 8) return 4;
-    if (renderDepth >= 6) return 6;
+    const clock = this.turbo?.getRenderClockState();
+    const renderDepth = clock?.queueDepth ?? 0;
+    const targetDepth = clock?.targetDepth ?? 4;
+    if (renderDepth >= targetDepth + 2) return Math.max(2, targetDepth);
+    if (renderDepth >= targetDepth) return Math.max(4, targetDepth + 2);
     return this.maxOutputQueue;
   }
 
