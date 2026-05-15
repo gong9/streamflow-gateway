@@ -1,6 +1,6 @@
 import { H265TurboPlayer, createH265TurboPlayer } from '../H265TurboPlayer';
 import { PlaybackProfiler } from '../metrics/PlaybackProfiler';
-import { TurboPlaybackMetrics, TurboFrame } from '../types';
+import { TurboPlaybackMetrics, TurboFrame, TurboRenderableFrame } from '../types';
 
 type PipelineStatus = (message: string, ok?: boolean) => void;
 
@@ -101,6 +101,11 @@ export class H265WasmDecodeRuntime {
   private decodeTimer = 0;
   private decodeInFlight = false;
   private readonly maxDecodeQueue = 72;
+  private outputQueue: TurboRenderableFrame[] = [];
+  private outputTimer = 0;
+  private readonly maxOutputQueue = 12;
+  private lastOutputAt = 0;
+  private readonly minOutputIntervalMs = 10;
 
   constructor(private readonly options: H265WasmDecodeRuntimeOptions) {
     this.width = options.width ?? 1280;
@@ -222,9 +227,13 @@ export class H265WasmDecodeRuntime {
     this.profiler?.stop();
     if (this.metricsTimer) window.clearInterval(this.metricsTimer);
     if (this.decodeTimer) window.clearTimeout(this.decodeTimer);
+    if (this.outputTimer) window.clearTimeout(this.outputTimer);
     this.decodeQueue = [];
+    this.clearOutputQueue();
     this.decodeTimer = 0;
     this.decodeInFlight = false;
+    this.outputTimer = 0;
+    this.lastOutputAt = 0;
     this.conn = null;
     this.decoder = null;
     this.turbo = null;
@@ -248,8 +257,12 @@ export class H265WasmDecodeRuntime {
       this.keyFrameWaitStartedAt = 0;
       this.decodeQueue = [];
       if (this.decodeTimer) window.clearTimeout(this.decodeTimer);
+      if (this.outputTimer) window.clearTimeout(this.outputTimer);
+      this.clearOutputQueue();
       this.decodeTimer = 0;
       this.decodeInFlight = false;
+      this.outputTimer = 0;
+      this.lastOutputAt = 0;
       if (this.formatFallbackTimer) window.clearTimeout(this.formatFallbackTimer);
       this.formatFallbackTimer = 0;
 
@@ -290,7 +303,7 @@ export class H265WasmDecodeRuntime {
         frame.close();
         return;
       }
-      this.turbo?.pushDecodedFrame(frame);
+      this.submitDecodedFrame(frame);
       return;
     }
 
@@ -306,7 +319,7 @@ export class H265WasmDecodeRuntime {
       height: frame.height ?? this.visibleHeight(),
       pts: performance.now()
     };
-    this.turbo?.pushDecodedFrame(nextFrame);
+    this.submitDecodedFrame(nextFrame);
   }
 
   private bindDecoderEvents(decoder: Jv4VideoDecoder) {
@@ -429,6 +442,103 @@ export class H265WasmDecodeRuntime {
     }
   }
 
+  private submitDecodedFrame(frame: TurboRenderableFrame) {
+    if (!this.shouldUseOutputBackpressure()) {
+      this.turbo?.pushDecodedFrame(frame);
+      return;
+    }
+
+    this.outputQueue.push(frame);
+    this.trimOutputQueue();
+    this.turbo?.setOutputQueueDepth(this.outputQueue.length);
+    this.scheduleOutputPump(this.nextInitialOutputDelayMs());
+  }
+
+  private shouldUseOutputBackpressure() {
+    return Boolean(this.options.preferDecodeScheduler && this.turbo && !this.options.preferDirectWorkerCanvas);
+  }
+
+  private scheduleOutputPump(delayMs: number) {
+    if (this.destroyed || this.outputTimer || !this.turbo) return;
+    this.outputTimer = window.setTimeout(() => {
+      this.outputTimer = 0;
+      this.pumpOutputQueue();
+    }, delayMs);
+  }
+
+  private pumpOutputQueue() {
+    if (this.destroyed || !this.turbo) {
+      this.clearOutputQueue();
+      return;
+    }
+
+    const renderDepth = this.turbo.getRenderQueueDepth();
+    if (renderDepth >= 8) {
+      this.trimOutputQueue(4);
+      this.scheduleOutputPump(18);
+      return;
+    }
+
+    const frame = this.outputQueue.shift();
+    if (!frame) {
+      this.turbo.setOutputQueueDepth(0);
+      return;
+    }
+
+    this.turbo.pushDecodedFrame(frame);
+    this.lastOutputAt = performance.now();
+    this.turbo.setOutputQueueDepth(this.outputQueue.length);
+
+    if (this.outputQueue.length > 0) {
+      this.scheduleOutputPump(this.nextOutputDelayMs());
+    }
+  }
+
+  private nextOutputDelayMs() {
+    const renderDepth = this.turbo?.getRenderQueueDepth() ?? 0;
+    const outputDepth = this.outputQueue.length;
+    const minDelay = this.nextInitialOutputDelayMs();
+    if (renderDepth >= 6) return 18;
+    if (renderDepth >= 4) return 14;
+    if (outputDepth >= 8) return Math.max(10, minDelay);
+    if (outputDepth >= 4) return Math.max(12, minDelay);
+    return Math.max(14, minDelay);
+  }
+
+  private nextInitialOutputDelayMs() {
+    if (this.lastOutputAt <= 0) return 0;
+    return Math.max(0, this.minOutputIntervalMs - (performance.now() - this.lastOutputAt));
+  }
+
+  private trimOutputQueue(maxDepth = this.currentOutputQueueLimit()) {
+    const limit = Math.max(1, maxDepth);
+    let dropped = 0;
+    while (this.outputQueue.length > limit) {
+      const frame = this.outputQueue.shift();
+      if (frame) {
+        closeRenderableFrame(frame);
+        dropped += 1;
+      }
+    }
+    if (dropped > 0) this.turbo?.addDroppedFrames(dropped);
+    this.turbo?.setOutputQueueDepth(this.outputQueue.length);
+  }
+
+  private currentOutputQueueLimit() {
+    const renderDepth = this.turbo?.getRenderQueueDepth() ?? 0;
+    if (renderDepth >= 8) return 4;
+    if (renderDepth >= 6) return 6;
+    return this.maxOutputQueue;
+  }
+
+  private clearOutputQueue() {
+    while (this.outputQueue.length) {
+      const frame = this.outputQueue.shift();
+      if (frame) closeRenderableFrame(frame);
+    }
+    this.turbo?.setOutputQueueDepth(0);
+  }
+
   private handlePackedYuvFrame(frame: PackedYuvLikeFrame) {
     if (this.destroyed) return;
     this.decodedFrames += 1;
@@ -442,7 +552,7 @@ export class H265WasmDecodeRuntime {
     const visibleHeight = Math.min(this.visibleHeight(), codedHeight);
     const ySize = width * codedHeight;
     const uvSize = ySize >> 2;
-    this.turbo?.pushDecodedFrame({
+    this.submitDecodedFrame({
       y: new Uint8Array(frame.data, 0, ySize),
       u: new Uint8Array(frame.data, ySize, uvSize),
       v: new Uint8Array(frame.data, ySize + uvSize, uvSize),
@@ -474,4 +584,12 @@ function isYuvFrame(value: unknown): value is YuvLikeFrame {
     'u' in value &&
     'v' in value
   );
+}
+
+function closeRenderableFrame(frame: TurboRenderableFrame) {
+  if (frame instanceof VideoFrame) {
+    frame.close();
+    return;
+  }
+  frame.close?.();
 }

@@ -48,6 +48,8 @@ export interface TurboPlaybackMetrics {
   frameP95Ms: number | null;
   queueDepth: number;
   decodeQueueDepth: number;
+  outputQueueDepth: number;
+  outputQueueMaxDepth: number;
   droppedFrames: number;
   clockDelayMs: number | null;
   mediaLagMs: number | null;

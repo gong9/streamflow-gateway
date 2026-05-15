@@ -11,7 +11,7 @@ type DecodeMode = 'main-thread-yuv' | 'worker-video-frame' | 'worker-direct-canv
 const decodeModes: Array<{ value: DecodeMode; label: string; description: string }> = [
   { value: 'worker-direct-canvas', label: 'Worker Direct Canvas', description: '单 worker 解码并绘制，对照模式' },
   { value: 'worker-video-frame', label: 'Worker VideoFrame', description: '解码 worker 输出 VideoFrame，独立 worker 渲染，当前推荐' },
-  { value: 'scheduled-video-frame', label: 'Scheduled VideoFrame', description: '解码包按小节奏喂给 WASM，观察 burst 是否下降' },
+  { value: 'scheduled-video-frame', label: 'Scheduled VideoFrame', description: '解码输入调度 + 输出背压，削平 WASM burst' },
   { value: 'packed-yuv', label: 'Packed YUV', description: '解码 worker transfer I420 buffer，减少 VideoFrame 对象创建' },
   { value: 'main-thread-yuv', label: '主线程 YUV', description: '主线程接收 YUV 后 WebGL 渲染' }
 ];
@@ -115,6 +115,8 @@ function DecodeLab() {
           <Metric label="解码间隔P95" value={formatMs(metrics?.decodedIntervalP95Ms)} />
           <Metric label="突发帧数" value={String(metrics?.decodedBurstMax ?? '--')} />
           <Metric label="喂包队列" value={String(metrics?.decodeQueueDepth ?? '--')} />
+          <Metric label="输出队列" value={String(metrics?.outputQueueDepth ?? '--')} />
+          <Metric label="输出峰值" value={String(metrics?.outputQueueMaxDepth ?? '--')} />
           <Metric label="队列" value={String(metrics?.queueDepth ?? '--')} />
           <Metric label="丢帧" value={String(metrics?.droppedFrames ?? '--')} />
           <Metric label="瓶颈" value={formatBottleneck(metrics?.bottleneck)} />

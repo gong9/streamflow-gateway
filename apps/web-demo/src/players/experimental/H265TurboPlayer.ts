@@ -88,6 +88,10 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     this.scheduleRender();
   }
 
+  getRenderQueueDepth() {
+    return this.queue?.depth ?? 0;
+  }
+
   markInputFrame() {
     this.profiler?.mark('input');
   }
@@ -98,6 +102,14 @@ export class H265TurboPlayer implements TurboPlayerHandle {
 
   setDecodeQueueDepth(depth: number) {
     this.profiler?.setDecodeQueueDepth(depth);
+  }
+
+  setOutputQueueDepth(depth: number) {
+    this.profiler?.setOutputQueueDepth(depth);
+  }
+
+  addDroppedFrames(count = 1) {
+    this.profiler?.addDropped(count);
   }
 
   measureDecode<T>(fn: () => T): T {
