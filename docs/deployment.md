@@ -80,6 +80,22 @@ The deploy script:
 4. Recreates only the `gateway` service with `--no-build`.
 5. Runs the public health check.
 
+## Small Server Limits
+
+For a 2 vCPU / 2 GiB server, keep the container limits conservative so the machine stays responsive:
+
+```bash
+GATEWAY_CPUS=1.6
+GATEWAY_MEM_LIMIT=1500m
+GATEWAY_PIDS_LIMIT=256
+MAX_TRANSCODE_STREAMS=1
+ZLM_CPUS=0.3
+ZLM_MEM_LIMIT=256m
+ZLM_PIDS_LIMIT=128
+```
+
+These limits do not increase throughput. They only prevent the machine from being fully saturated when several different streams are transcoded at once. On very small machines, set `MAX_TRANSCODE_STREAMS=1`; H265 raw direct playback and H264 remux streams can still run outside this expensive transcode quota.
+
 ## Server Requirements
 
 The server needs:

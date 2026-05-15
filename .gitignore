@@ -11,6 +11,7 @@ logs/
 /.build/
 /playwright-report/
 /test-results/
+.playwright-cli/
 /.cargo-docker/
 /.docker-sources/
 /vendor/

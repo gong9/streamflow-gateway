@@ -1,0 +1,5 @@
+jessibuca-js 1.0.2
+Description: Jessibuca 3.2.8 browser build
+License: ISC
+NPM: https://www.npmjs.com/package/jessibuca-js
+Runtime files copied from the published npm package dist directory.

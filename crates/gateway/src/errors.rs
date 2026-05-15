@@ -16,6 +16,8 @@ pub enum AppError {
     UpstreamLimit,
     #[error("viewer limit reached")]
     ViewerLimit,
+    #[error("transcode limit reached")]
+    TranscodeLimit,
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -31,7 +33,9 @@ impl IntoResponse for AppError {
         let status = match self {
             AppError::InvalidUrl(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::UpstreamLimit | AppError::ViewerLimit => StatusCode::TOO_MANY_REQUESTS,
+            AppError::UpstreamLimit | AppError::ViewerLimit | AppError::TranscodeLimit => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = self.to_string();

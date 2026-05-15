@@ -10,10 +10,15 @@ export default defineConfig({
   server: {
     port: webPort,
     strictPort: true,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    },
     proxy: {
       '/api': gatewayTarget,
       '/ws': { target: wsTarget, ws: true },
-      '/hls': gatewayTarget
+      '/hls': gatewayTarget,
+      '/zlm': gatewayTarget
     }
   },
   test: {

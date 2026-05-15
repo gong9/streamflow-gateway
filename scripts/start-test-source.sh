@@ -28,11 +28,11 @@ if ! port_open; then
   exit 1
 fi
 
-ffmpeg -hide_banner -loglevel warning -re -f lavfi -i testsrc=size=1280x720:rate=15 \
+nohup ffmpeg -hide_banner -loglevel warning -nostdin -re -f lavfi -i testsrc=size=1280x720:rate=15 \
   -metadata title=streamflow-testsrc \
   -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
   -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/live/test \
-  > logs/test-source.log 2>&1 &
+  > logs/test-source.log 2>&1 < /dev/null &
 
 echo $! > logs/test-source.pid
 sleep 2

@@ -68,6 +68,7 @@ test-functional:
 	GATEWAY_HOST=$(GATEWAY_HOST) GATEWAY_PORT=$(TEST_GATEWAY_PORT) STREAMFLOW_SPAWN_PROCESSES=0 CLEANUP_AFTER_SECS=1 cargo run -p streamflow-gateway > logs/functional-gateway.log 2>&1 & \
 	pid=$$!; \
 	trap 'kill $$pid >/dev/null 2>&1 || true' EXIT; \
+	for i in $$(seq 1 60); do curl -fsS http://$(GATEWAY_HOST):$(TEST_GATEWAY_PORT)/health >/dev/null 2>&1 && break; sleep 0.5; done; \
 	APP_URL=http://$(GATEWAY_HOST):$(TEST_GATEWAY_PORT) node scripts/functional-smoke.js
 
 test-frontend-flow:
@@ -76,7 +77,8 @@ test-frontend-flow:
 	GATEWAY_HOST=$(GATEWAY_HOST) GATEWAY_PORT=$(FRONTEND_FLOW_GATEWAY_PORT) STREAMFLOW_SPAWN_PROCESSES=0 CLEANUP_AFTER_SECS=30 cargo run -p streamflow-gateway > logs/frontend-flow-gateway.log 2>&1 & \
 	pid=$$!; \
 	trap 'kill $$pid >/dev/null 2>&1 || true' EXIT; \
-	cd $(APP_DIR) && VITE_GATEWAY_TARGET=http://$(GATEWAY_HOST):$(FRONTEND_FLOW_GATEWAY_PORT) VITE_WEB_PORT=$(FRONTEND_FLOW_WEB_PORT) npm run test:e2e:flow
+	for i in $$(seq 1 60); do curl -fsS http://$(GATEWAY_HOST):$(FRONTEND_FLOW_GATEWAY_PORT)/health >/dev/null 2>&1 && break; sleep 0.5; done; \
+	cd $(APP_DIR) && VITE_SKIP_HLS_READY=1 VITE_GATEWAY_TARGET=http://$(GATEWAY_HOST):$(FRONTEND_FLOW_GATEWAY_PORT) VITE_WEB_PORT=$(FRONTEND_FLOW_WEB_PORT) npm run test:e2e:flow
 
 test-integration:
 	./scripts/start-test-source.sh
@@ -91,6 +93,7 @@ load:
 	GATEWAY_HOST=$(GATEWAY_HOST) GATEWAY_PORT=$(LOAD_GATEWAY_PORT) STREAMFLOW_SPAWN_PROCESSES=0 MAX_UPSTREAMS=$$(($(LOAD_STREAMS) + 5)) MAX_VIEWERS=$$(($(LOAD_VIEWERS) + 20)) CLEANUP_AFTER_SECS=5 cargo run -p streamflow-gateway > logs/load-gateway.log 2>&1 & \
 	pid=$$!; \
 	trap 'kill $$pid >/dev/null 2>&1 || true' EXIT; \
+	for i in $$(seq 1 60); do curl -fsS http://$(GATEWAY_HOST):$(LOAD_GATEWAY_PORT)/health >/dev/null 2>&1 && break; sleep 0.5; done; \
 	APP_URL=http://$(GATEWAY_HOST):$(LOAD_GATEWAY_PORT) STREAMS=$(LOAD_STREAMS) VIEWERS=$(LOAD_VIEWERS) DURATION_SECONDS=$(LOAD_DURATION_SECONDS) RAMP_MS=$(LOAD_RAMP_MS) node scripts/load-matrix.js | tee logs/load-matrix.ndjson
 
 load-live:

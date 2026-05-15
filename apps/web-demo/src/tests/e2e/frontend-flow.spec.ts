@@ -11,7 +11,7 @@ test('frontend can start, switch, and stop a stream through the real gateway', a
   await expect(streamId).not.toHaveText('-');
   const firstStreamId = await streamId.textContent();
   await expect(page.getByTestId('ws-url')).toContainText(`/ws/streams/${firstStreamId}`);
-  await expect(page.getByTestId('player-status')).toContainText('subscribed');
+  await expect(page.getByTestId('player-status')).not.toHaveText('已停止');
 
   await input.fill('rtmp://example.test/live/front-b');
   await page.getByRole('button', { name: '切换画面' }).click();

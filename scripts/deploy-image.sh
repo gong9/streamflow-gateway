@@ -18,6 +18,9 @@ fi
 echo "==> Uploading image archive to $REMOTE_HOST:$REMOTE_DIR"
 scp "$IMAGE_TAR" "$REMOTE_HOST:$REMOTE_DIR/streamflow-gateway-amd64.tar.gz"
 
+echo "==> Uploading production compose file"
+scp "$ROOT_DIR/docker-compose.prod.yml" "$REMOTE_HOST:$REMOTE_DIR/docker-compose.prod.yml"
+
 echo "==> Loading image and restarting gateway"
 ssh "$REMOTE_HOST" "cd '$REMOTE_DIR' && \
   gunzip -c streamflow-gateway-amd64.tar.gz | docker load && \

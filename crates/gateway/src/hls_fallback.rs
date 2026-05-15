@@ -1,10 +1,12 @@
 use crate::config::Config;
+use chrono::{DateTime, Utc};
 use std::path::{Component, PathBuf};
 
 #[derive(Clone, Debug)]
 pub struct HlsFallback {
     zlm_http_origin: String,
     root: PathBuf,
+    transcode_height: u32,
 }
 
 impl HlsFallback {
@@ -12,11 +14,20 @@ impl HlsFallback {
         Self {
             zlm_http_origin: config.zlm_http_origin.clone(),
             root: PathBuf::from(&config.hls_root),
+            transcode_height: config.transcode_height,
         }
+    }
+
+    pub fn transcode_height(&self) -> u32 {
+        self.transcode_height
     }
 
     pub fn hls_url(&self, stream_id: &str) -> String {
         format!("/hls/live/{stream_id}/hls.m3u8")
+    }
+
+    pub fn raw_flv_url(&self, stream_id: &str) -> String {
+        format!("/raw-flv/{stream_id}.flv")
     }
 
     pub fn upstream_http_url(&self, path_and_query: &str) -> String {
@@ -53,5 +64,28 @@ impl HlsFallback {
         }
 
         Some(self.root.join(clean))
+    }
+
+    pub fn latest_segment_modified(&self, stream_id: &str) -> Option<DateTime<Utc>> {
+        let entries = std::fs::read_dir(self.stream_dir(stream_id)).ok()?;
+        entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let path = entry.path();
+                let is_segment = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with(".ts"));
+                if !is_segment {
+                    return None;
+                }
+
+                entry
+                    .metadata()
+                    .ok()
+                    .and_then(|metadata| metadata.modified().ok())
+                    .map(DateTime::<Utc>::from)
+            })
+            .max()
     }
 }
