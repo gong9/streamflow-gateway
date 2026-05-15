@@ -50,6 +50,7 @@ export interface TurboPlaybackMetrics {
   decodeQueueDepth: number;
   outputQueueDepth: number;
   outputQueueMaxDepth: number;
+  renderQueueTargetDepth: number;
   droppedFrames: number;
   clockDelayMs: number | null;
   mediaLagMs: number | null;
@@ -75,6 +76,7 @@ export interface TurboPlayerOptions {
   onMetrics?: (metrics: TurboPlaybackMetrics) => void;
   preferWebGpu?: boolean;
   preferWorkerRender?: boolean;
+  preferLowLatencyWaterline?: boolean;
   displayWidth?: number | null;
   displayHeight?: number | null;
 }

@@ -6,12 +6,13 @@ import { TurboPlaybackMetrics } from './players/experimental/types';
 import './experimental-decode.css';
 
 const defaultUrl = 'https://example.test/live/h265.flv?codeType=H265';
-type DecodeMode = 'main-thread-yuv' | 'worker-video-frame' | 'worker-direct-canvas' | 'scheduled-video-frame' | 'packed-yuv';
+type DecodeMode = 'main-thread-yuv' | 'worker-video-frame' | 'worker-direct-canvas' | 'scheduled-video-frame' | 'low-latency-scheduled' | 'packed-yuv';
 
 const decodeModes: Array<{ value: DecodeMode; label: string; description: string }> = [
   { value: 'worker-direct-canvas', label: 'Worker Direct Canvas', description: '单 worker 解码并绘制，对照模式' },
   { value: 'worker-video-frame', label: 'Worker VideoFrame', description: '解码 worker 输出 VideoFrame，独立 worker 渲染，当前推荐' },
   { value: 'scheduled-video-frame', label: 'Scheduled VideoFrame', description: '解码输入调度 + 输出背压，削平 WASM burst' },
+  { value: 'low-latency-scheduled', label: 'Low Latency Scheduled', description: '在 Scheduled 基础上压低渲染队列水位，实验低延迟' },
   { value: 'packed-yuv', label: 'Packed YUV', description: '解码 worker transfer I420 buffer，减少 VideoFrame 对象创建' },
   { value: 'main-thread-yuv', label: '主线程 YUV', description: '主线程接收 YUV 后 WebGL 渲染' }
 ];
@@ -49,8 +50,9 @@ function DecodeLab() {
         onMetrics: setMetrics,
         onError: setError,
         preferDirectWorkerCanvas: mode === 'worker-direct-canvas',
-        preferWorkerRender: mode === 'worker-video-frame' || mode === 'scheduled-video-frame',
-        preferDecodeScheduler: mode === 'scheduled-video-frame',
+        preferWorkerRender: mode === 'worker-video-frame' || mode === 'scheduled-video-frame' || mode === 'low-latency-scheduled',
+        preferDecodeScheduler: mode === 'scheduled-video-frame' || mode === 'low-latency-scheduled',
+        preferLowLatencyWaterline: mode === 'low-latency-scheduled',
         preferPackedYuv: mode === 'packed-yuv'
       });
       runtimeRef.current = runtime;
@@ -117,6 +119,7 @@ function DecodeLab() {
           <Metric label="喂包队列" value={String(metrics?.decodeQueueDepth ?? '--')} />
           <Metric label="输出队列" value={String(metrics?.outputQueueDepth ?? '--')} />
           <Metric label="输出峰值" value={String(metrics?.outputQueueMaxDepth ?? '--')} />
+          <Metric label="目标水位" value={String(metrics?.renderQueueTargetDepth ?? '--')} />
           <Metric label="队列" value={String(metrics?.queueDepth ?? '--')} />
           <Metric label="丢帧" value={String(metrics?.droppedFrames ?? '--')} />
           <Metric label="瓶颈" value={formatBottleneck(metrics?.bottleneck)} />
@@ -175,6 +178,7 @@ function modeLabel(mode: DecodeMode) {
   if (mode === 'worker-direct-canvas') return 'Direct Canvas';
   if (mode === 'worker-video-frame') return 'VideoFrame';
   if (mode === 'scheduled-video-frame') return 'Scheduled';
+  if (mode === 'low-latency-scheduled') return 'Low Latency';
   if (mode === 'packed-yuv') return 'Packed YUV';
   return 'YUV';
 }

@@ -18,15 +18,21 @@ export class H265TurboPlayer implements TurboPlayerHandle {
   private nextRenderAt = 0;
   private bufferingStartedAt = 0;
   private playbackStarted = false;
+  private renderCostEmaMs = 0;
   private readonly targetFrameIntervalMs: number;
-  private readonly minBufferFrames = 5;
-  private readonly catchupQueueFrames = 10;
-  private readonly lowWaterFrames = 3;
-  private readonly trimQueueFrames = 12;
-  private readonly trimTargetFrames = 8;
+  private readonly startupBufferFrames: number;
+  private readonly startupWaitMs: number;
+  private readonly baseTargetQueueFrames = 4;
+  private readonly legacyMinBufferFrames = 5;
+  private readonly legacyCatchupQueueFrames = 10;
+  private readonly legacyLowWaterFrames = 3;
+  private readonly legacyTrimQueueFrames = 12;
+  private readonly legacyTrimTargetFrames = 8;
 
   constructor(private readonly options: TurboPlayerOptions) {
     this.targetFrameIntervalMs = 1000 / clampFps(options.source.fps ?? 25);
+    this.startupBufferFrames = options.preferLowLatencyWaterline ? 4 : this.legacyMinBufferFrames;
+    this.startupWaitMs = options.preferLowLatencyWaterline ? 320 : 420;
   }
 
   async start() {
@@ -65,6 +71,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     this.nextRenderAt = 0;
     this.bufferingStartedAt = 0;
     this.playbackStarted = false;
+    this.renderCostEmaMs = 0;
     this.queue?.clear();
     this.profiler?.stop();
     this.renderer?.destroy();
@@ -84,6 +91,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     }
     this.profiler?.mark('decoded');
     this.queue.push(frame);
+    this.applyDynamicWaterline(performance.now());
     this.profiler?.setQueueDepth(this.queue.depth);
     this.scheduleRender();
   }
@@ -149,7 +157,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
     if (!this.playbackStarted) {
       if (!this.bufferingStartedAt) this.bufferingStartedAt = now;
       const waitedMs = now - this.bufferingStartedAt;
-      if (this.queue.depth < this.minBufferFrames && waitedMs < 420) {
+      if (this.queue.depth < this.startupBufferFrames && waitedMs < this.startupWaitMs) {
         this.scheduleRender();
         return;
       }
@@ -163,11 +171,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
       return;
     }
 
-    if (this.queue.depth > this.trimQueueFrames) {
-      this.queue.trimToLatest(this.trimTargetFrames);
-      this.nextRenderAt = now;
-      this.profiler.setQueueDepth(this.queue.depth);
-    }
+    this.applyDynamicWaterline(now);
 
     const frame = this.queue.popLatest();
     this.profiler.setQueueDepth(this.queue.depth);
@@ -175,6 +179,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
 
     let rendered = false;
     this.renderInFlight = true;
+    const renderStartedAt = performance.now();
     try {
       rendered = Boolean(await this.profiler.measureAsync('render', async () => {
         return await this.renderer?.render(frame);
@@ -183,6 +188,7 @@ export class H265TurboPlayer implements TurboPlayerHandle {
       this.renderInFlight = false;
       if (!rendered) closeRenderableFrame(frame);
     }
+    this.updateRenderCostEma(performance.now() - renderStartedAt);
     if (rendered) this.profiler.mark('rendered');
     this.nextRenderAt = Math.max(now, this.nextRenderAt) + this.nextFrameInterval();
     this.profiler.setClockStats({
@@ -195,10 +201,68 @@ export class H265TurboPlayer implements TurboPlayerHandle {
 
   private nextFrameInterval() {
     const depth = this.queue?.depth ?? 0;
-    if (depth >= this.catchupQueueFrames) return 1000 / 45;
-    if (depth >= this.minBufferFrames + 3) return 1000 / 32;
-    if (depth <= this.lowWaterFrames) return this.targetFrameIntervalMs * 1.12;
+    if (!this.options.preferLowLatencyWaterline) {
+      if (depth >= this.legacyCatchupQueueFrames) return 1000 / 45;
+      if (depth >= this.legacyMinBufferFrames + 3) return 1000 / 32;
+      if (depth <= this.legacyLowWaterFrames) return this.targetFrameIntervalMs * 1.12;
+      return this.targetFrameIntervalMs;
+    }
+
+    const targetDepth = this.targetQueueDepth();
+    if (depth >= targetDepth + 5) return 1000 / 55;
+    if (depth >= targetDepth + 3) return 1000 / 45;
+    if (depth > targetDepth) return 1000 / 36;
+    if (depth <= 1) return this.targetFrameIntervalMs * 1.08;
     return this.targetFrameIntervalMs;
+  }
+
+  private applyDynamicWaterline(now: number) {
+    if (!this.queue || !this.profiler) return;
+    if (!this.options.preferLowLatencyWaterline) {
+      this.profiler.setRenderQueueTargetDepth(this.legacyTrimTargetFrames);
+      if (this.queue.depth > this.legacyTrimQueueFrames) {
+        this.queue.trimToLatest(this.legacyTrimTargetFrames);
+        this.nextRenderAt = now;
+        this.profiler.setQueueDepth(this.queue.depth);
+      }
+      return;
+    }
+
+    const targetDepth = this.targetQueueDepth();
+    const highWaterDepth = this.highWaterQueueDepth(targetDepth);
+    this.profiler.setRenderQueueTargetDepth(targetDepth);
+
+    if (this.queue.depth > highWaterDepth) {
+      this.queue.trimToLatest(targetDepth);
+      this.nextRenderAt = now;
+      this.profiler.setQueueDepth(this.queue.depth);
+      return;
+    }
+
+    if (this.playbackStarted && this.queue.depth > targetDepth) {
+      this.nextRenderAt = Math.min(this.nextRenderAt || now, now);
+    }
+  }
+
+  private targetQueueDepth() {
+    if (this.renderCostEmaMs >= 14) return 5;
+    if (this.renderCostEmaMs >= 9) return 4;
+    return this.baseTargetQueueFrames;
+  }
+
+  private highWaterQueueDepth(targetDepth: number) {
+    if (this.renderCostEmaMs >= 14) return targetDepth + 5;
+    if (this.renderCostEmaMs >= 9) return targetDepth + 4;
+    return targetDepth + 2;
+  }
+
+  private updateRenderCostEma(costMs: number) {
+    if (!Number.isFinite(costMs)) return;
+    if (this.renderCostEmaMs <= 0) {
+      this.renderCostEmaMs = costMs;
+      return;
+    }
+    this.renderCostEmaMs = this.renderCostEmaMs * 0.82 + costMs * 0.18;
   }
 
   private shouldUseTimerClock() {

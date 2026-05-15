@@ -75,6 +75,7 @@ export interface H265WasmDecodeRuntimeOptions {
   preferWorkerRender?: boolean;
   preferPackedYuv?: boolean;
   preferDecodeScheduler?: boolean;
+  preferLowLatencyWaterline?: boolean;
 }
 
 const vendorModuleUrl = '/vendor/jessibuca4/jv4-simd.js';
@@ -137,6 +138,7 @@ export class H265WasmDecodeRuntime {
         onMetrics: this.options.onMetrics,
         preferWebGpu: false,
         preferWorkerRender: this.options.preferWorkerRender,
+        preferLowLatencyWaterline: this.options.preferLowLatencyWaterline,
         displayWidth: this.options.width,
         displayHeight: this.options.height
       });

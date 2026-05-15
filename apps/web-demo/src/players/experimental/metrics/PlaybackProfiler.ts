@@ -25,6 +25,7 @@ export class PlaybackProfiler {
   private decodeQueueDepth = 0;
   private outputQueueDepth = 0;
   private outputQueueMaxDepth = 0;
+  private renderQueueTargetDepth = 0;
   private clockDelayMs: number | null = null;
   private mediaLagMs: number | null = null;
   private longTasks: Array<{ at: number; duration: number }> = [];
@@ -117,6 +118,10 @@ export class PlaybackProfiler {
     this.outputQueueMaxDepth = Math.max(this.outputQueueMaxDepth, depth);
   }
 
+  setRenderQueueTargetDepth(depth: number) {
+    this.renderQueueTargetDepth = depth;
+  }
+
   setClockStats(stats: { delayMs?: number | null; mediaLagMs?: number | null }) {
     if (stats.delayMs !== undefined) this.clockDelayMs = stats.delayMs;
     if (stats.mediaLagMs !== undefined) this.mediaLagMs = stats.mediaLagMs;
@@ -139,6 +144,7 @@ export class PlaybackProfiler {
       decodeQueueDepth: this.decodeQueueDepth,
       outputQueueDepth: this.outputQueueDepth,
       outputQueueMaxDepth: this.outputQueueMaxDepth,
+      renderQueueTargetDepth: this.renderQueueTargetDepth,
       droppedFrames: this.droppedFrames,
       clockDelayMs: this.clockDelayMs,
       mediaLagMs: this.mediaLagMs,
