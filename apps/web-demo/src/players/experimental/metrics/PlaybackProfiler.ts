@@ -15,9 +15,15 @@ export class PlaybackProfiler {
     render: []
   };
   private frameIntervals: number[] = [];
+  private decodedIntervals: number[] = [];
   private lastRenderAt = 0;
+  private lastDecodedAt = 0;
+  private decodedBurst = 0;
+  private decodedBurstMax = 0;
   private droppedFrames = 0;
   private queueDepth = 0;
+  private clockDelayMs: number | null = null;
+  private mediaLagMs: number | null = null;
   private longTasks: Array<{ at: number; duration: number }> = [];
   private observer: PerformanceObserver | null = null;
   private lastSnapshotAt = performance.now();
@@ -46,6 +52,22 @@ export class PlaybackProfiler {
 
   mark(name: CounterName) {
     this.counters[name] += 1;
+    if (name === 'decoded') {
+      const now = performance.now();
+      if (this.lastDecodedAt > 0) {
+        const delta = now - this.lastDecodedAt;
+        this.decodedIntervals.push(delta);
+        if (delta <= 8) {
+          this.decodedBurst += 1;
+        } else {
+          this.decodedBurst = 1;
+        }
+        this.decodedBurstMax = Math.max(this.decodedBurstMax, this.decodedBurst);
+      } else {
+        this.decodedBurst = 1;
+      }
+      this.lastDecodedAt = now;
+    }
     if (name === 'rendered') {
       const now = performance.now();
       if (this.lastRenderAt > 0) this.frameIntervals.push(now - this.lastRenderAt);
@@ -75,8 +97,17 @@ export class PlaybackProfiler {
     this.droppedFrames += count;
   }
 
+  addRenderCost(costMs: number) {
+    if (Number.isFinite(costMs)) this.costs.render.push(costMs);
+  }
+
   setQueueDepth(depth: number) {
     this.queueDepth = depth;
+  }
+
+  setClockStats(stats: { delayMs?: number | null; mediaLagMs?: number | null }) {
+    if (stats.delayMs !== undefined) this.clockDelayMs = stats.delayMs;
+    if (stats.mediaLagMs !== undefined) this.mediaLagMs = stats.mediaLagMs;
   }
 
   snapshot(): TurboPlaybackMetrics {
@@ -94,6 +125,10 @@ export class PlaybackProfiler {
       frameP95Ms: percentile(this.frameIntervals, 0.95),
       queueDepth: this.queueDepth,
       droppedFrames: this.droppedFrames,
+      clockDelayMs: this.clockDelayMs,
+      mediaLagMs: this.mediaLagMs,
+      decodedIntervalP95Ms: percentile(this.decodedIntervals, 0.95),
+      decodedBurstMax: this.decodedBurstMax,
       longTaskCount: this.longTasks.length,
       longTaskTotalMs,
       mode: this.mode,
@@ -112,7 +147,9 @@ export class PlaybackProfiler {
     this.costs.decode = [];
     this.costs.render = [];
     this.frameIntervals = [];
+    this.decodedIntervals = [];
     this.droppedFrames = 0;
+    this.decodedBurstMax = 0;
     this.lastSnapshotAt = now;
   }
 
@@ -125,7 +162,13 @@ export class PlaybackProfiler {
 
 function diagnose(metrics: TurboPlaybackMetrics): TurboPlaybackMetrics['bottleneck'] {
   if (metrics.longTaskTotalMs > 300 || metrics.longTaskCount >= 4) return 'main-thread';
-  if (metrics.queueDepth >= 4 || metrics.droppedFrames >= 8) return 'queue';
+  if (
+    typeof metrics.renderedFps === 'number' &&
+    metrics.renderedFps >= 20 &&
+    typeof metrics.frameP95Ms === 'number' &&
+    metrics.frameP95Ms <= 60
+  ) return 'healthy';
+  if (metrics.queueDepth >= 10 || metrics.droppedFrames >= 8) return 'queue';
   if (isLow(metrics.inputFps)) return 'input';
   if (isLow(metrics.demuxFps)) return 'demux';
   if (isLow(metrics.decodedFps)) return 'decode';

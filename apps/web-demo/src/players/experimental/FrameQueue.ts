@@ -1,4 +1,4 @@
-import { TurboFrame } from './types';
+import { TurboRenderableFrame } from './types';
 
 export interface FrameQueueOptions {
   maxFrames?: number;
@@ -7,7 +7,7 @@ export interface FrameQueueOptions {
 }
 
 export class FrameQueue {
-  private readonly frames: TurboFrame[] = [];
+  private readonly frames: TurboRenderableFrame[] = [];
   private readonly maxFrames: number;
   private readonly preferLatest: boolean;
 
@@ -16,13 +16,25 @@ export class FrameQueue {
     this.preferLatest = options.preferLatest ?? true;
   }
 
-  push(frame: TurboFrame) {
+  trimToLatest(maxDepth: number) {
+    let dropped = 0;
+    while (this.frames.length > Math.max(1, maxDepth)) {
+      const removed = this.frames.shift();
+      if (removed) {
+        closeRenderableFrame(removed);
+        dropped += 1;
+      }
+    }
+    if (dropped > 0) this.options.onDrop?.(dropped);
+  }
+
+  push(frame: TurboRenderableFrame) {
     this.frames.push(frame);
     let dropped = 0;
     while (this.frames.length > this.maxFrames) {
       const removed = this.preferLatest ? this.frames.shift() : this.frames.pop();
       if (removed) {
-        removed.close?.();
+        closeRenderableFrame(removed);
         dropped += 1;
       }
     }
@@ -30,18 +42,27 @@ export class FrameQueue {
   }
 
   popLatest() {
-    if (!this.preferLatest) return this.frames.shift() ?? null;
-    if (this.frames.length <= 1) return this.frames.shift() ?? null;
+    // Dropping happens on push when the queue exceeds maxFrames.
+    // On render, consume one frame at a time so bursty worker output does not
+    // collapse into one visible frame per burst.
+    return this.frames.shift() ?? null;
+  }
 
-    const latest = this.frames.pop() ?? null;
+  peekOldest() {
+    return this.frames[0] ?? null;
+  }
+
+  dropWhile(shouldDrop: (frame: TurboRenderableFrame) => boolean, minDepth = 1) {
     let dropped = 0;
-    while (this.frames.length) {
-      const old = this.frames.shift();
-      old?.close?.();
+    while (this.frames.length > Math.max(0, minDepth)) {
+      const frame = this.frames[0];
+      if (!frame || !shouldDrop(frame)) break;
+      this.frames.shift();
+      closeRenderableFrame(frame);
       dropped += 1;
     }
     if (dropped > 0) this.options.onDrop?.(dropped);
-    return latest;
+    return dropped;
   }
 
   get depth() {
@@ -50,7 +71,16 @@ export class FrameQueue {
 
   clear() {
     while (this.frames.length) {
-      this.frames.shift()?.close?.();
+      const frame = this.frames.shift();
+      if (frame) closeRenderableFrame(frame);
     }
   }
+}
+
+function closeRenderableFrame(frame: TurboRenderableFrame) {
+  if (frame instanceof VideoFrame) {
+    frame.close();
+    return;
+  }
+  frame.close?.();
 }

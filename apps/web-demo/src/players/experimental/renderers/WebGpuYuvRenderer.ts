@@ -24,8 +24,9 @@ export class WebGpuYuvRenderer implements TurboRenderer {
   }
 
   render(_frame: TurboFrame) {
-    if (!this.ready) return;
+    if (!this.ready) return false;
     // TODO: 上传 Y/U/V plane 到 GPU texture，shader 完成 YUV -> RGB 和缩放。
+    return false;
   }
 
   destroy() {

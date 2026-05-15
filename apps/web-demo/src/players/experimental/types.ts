@@ -1,4 +1,4 @@
-export type TurboDecoderMode = 'webgpu-render' | 'webgl-render' | 'canvas2d-render';
+export type TurboDecoderMode = 'webgpu-render' | 'webgl-render' | 'canvas2d-render' | 'worker-video-frame' | 'worker-direct-canvas';
 
 export interface TurboSourceInfo {
   url: string;
@@ -34,6 +34,8 @@ export interface TurboFrame {
   close?: () => void;
 }
 
+export type TurboRenderableFrame = TurboFrame | VideoFrame;
+
 export interface TurboPlaybackMetrics {
   inputFps: number | null;
   demuxFps: number | null;
@@ -44,6 +46,10 @@ export interface TurboPlaybackMetrics {
   frameP95Ms: number | null;
   queueDepth: number;
   droppedFrames: number;
+  clockDelayMs: number | null;
+  mediaLagMs: number | null;
+  decodedIntervalP95Ms: number | null;
+  decodedBurstMax: number;
   longTaskCount: number;
   longTaskTotalMs: number;
   mode: TurboDecoderMode;
@@ -53,7 +59,7 @@ export interface TurboPlaybackMetrics {
 export interface TurboRenderer {
   readonly mode: TurboDecoderMode;
   initialize(width: number, height: number): Promise<void> | void;
-  render(frame: TurboFrame): Promise<void> | void;
+  render(frame: TurboRenderableFrame): Promise<boolean | void> | boolean | void;
   destroy(): void;
 }
 
@@ -63,6 +69,9 @@ export interface TurboPlayerOptions {
   onStatus?: (message: string, ok?: boolean) => void;
   onMetrics?: (metrics: TurboPlaybackMetrics) => void;
   preferWebGpu?: boolean;
+  preferWorkerRender?: boolean;
+  displayWidth?: number | null;
+  displayHeight?: number | null;
 }
 
 export interface TurboPlayerHandle {

@@ -1,4 +1,4 @@
-import { TurboFrame, TurboRenderer } from '../types';
+import { TurboFrame, TurboRenderableFrame, TurboRenderer } from '../types';
 
 export class Canvas2dYuvRenderer implements TurboRenderer {
   readonly mode = 'canvas2d-render' as const;
@@ -15,10 +15,15 @@ export class Canvas2dYuvRenderer implements TurboRenderer {
     this.imageData = this.ctx.createImageData(width, height);
   }
 
-  render(frame: TurboFrame) {
-    if (!this.ctx || !this.imageData) return;
+  render(frame: TurboRenderableFrame) {
+    if (!this.ctx || !this.imageData) return false;
+    if (frame instanceof VideoFrame) {
+      this.ctx.drawImage(frame, 0, 0, this.canvas.width, this.canvas.height);
+      return true;
+    }
     yuv420ToRgba(frame, this.imageData.data);
     this.ctx.putImageData(this.imageData, 0, 0);
+    return true;
   }
 
   destroy() {

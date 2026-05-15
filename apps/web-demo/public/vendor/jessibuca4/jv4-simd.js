@@ -1398,6 +1398,31 @@ function WorkerScripts() {
       const gl = canvas?.getContext("2d");
       let width = 0;
       let height = 0;
+      let pendingFrame = null;
+      let pendingPts = 0;
+      let droppedFrames = 0;
+      const renderIntervalMs = 25;
+      const drawPendingFrame = () => {
+        if (!canvas || !gl || !pendingFrame) return;
+        const frame = pendingFrame;
+        const pts = pendingPts;
+        pendingFrame = null;
+        const startedAt = performance.now();
+        try {
+          gl.drawImage(frame, 0, 0, canvas.width, canvas.height);
+          self.postMessage({
+            type: "rendered",
+            pts,
+            at: performance.now(),
+            costMs: performance.now() - startedAt,
+            dropped: droppedFrames
+          });
+          droppedFrames = 0;
+        } finally {
+          frame.close();
+        }
+      };
+      const renderTimer = canvas ? setInterval(drawPendingFrame, renderIntervalMs) : 0;
       const module = {
         wasmBinary,
         postRun: () => {
@@ -1427,9 +1452,13 @@ function WorkerScripts() {
                 timestamp: pts
               });
               if (canvas) {
-                gl?.drawImage(videoFrame, 0, 0, canvas.width, canvas.height);
-                videoFrame.close();
-                gl?.commit();
+                if (pendingFrame) {
+                  pendingFrame.close();
+                  droppedFrames += 1;
+                }
+                self.postMessage({ type: "decoded", pts, at: performance.now() });
+                pendingFrame = videoFrame;
+                pendingPts = pts;
               } else {
                 self.postMessage({ type: "yuvData", videoFrame }, [videoFrame]);
               }
@@ -1477,6 +1506,10 @@ var VideoDecoderSoftBase = class extends FSM {
           } else if (evt.data.type === "yuvData") {
             const { videoFrame } = evt.data;
             this.emit("videoFrame" /* VideoFrame */, videoFrame);
+          } else if (evt.data.type === "decoded") {
+            this.emit("decoded", evt.data);
+          } else if (evt.data.type === "rendered") {
+            this.emit("rendered", evt.data);
           }
         };
       });
@@ -1519,6 +1552,10 @@ var VideoDecoderSoftBase = class extends FSM {
   }
   close() {
     this.removeAllListeners();
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = void 0;
+    }
     if (this.decoder) {
       this.decoder.clear();
       this.decoder.delete();
