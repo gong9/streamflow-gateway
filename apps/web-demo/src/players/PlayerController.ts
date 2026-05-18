@@ -1,12 +1,12 @@
 import { startH264Fallback, StreamResponse, waitForHlsReady } from '../api';
-import { canTryH265Direct, H265ClientStats, H265DirectHandle, startH265DirectPlayer } from './H265DirectPlayer';
-import { canTryH265Pthreads, H265PthreadsHandle, startH265PthreadsPlayer } from './H265PthreadsPlayer';
+import { H265ClientStats } from './H265DirectPlayer';
+import { canTryH265OptimizedWasm, H265OptimizedWasmHandle, startH265OptimizedWasmPlayer } from './H265OptimizedWasmPlayer';
 import { startHlsPlayer, HlsPlayerHandle } from './HlsFallbackPlayer';
-import { canTryJessibuca4Simd, Jessibuca4SimdHandle, startJessibuca4SimdPlayer } from './Jessibuca4SimdPlayer';
 import { canTryNativeHevcMse, NativeHevcMseHandle, startNativeHevcMsePlayer } from './NativeHevcMsePlayer';
 import { startWebCodecsPlayer, WebCodecsHandle, canUseWebCodecs } from './WebCodecsPlayer';
 
 export type ActiveMode = 'webcodecs' | 'h265' | 'native-hevc' | 'hls';
+export type H265PlaybackPreference = 'hard' | 'soft' | 'compat';
 
 export interface ControllerHandle {
   destroy(): void;
@@ -19,15 +19,14 @@ export function startPlayer(
   h265Container: HTMLDivElement,
   onMode: (mode: ActiveMode) => void,
   onStatus: (text: string, ok?: boolean) => void,
-  onH265Stats?: (stats: H265ClientStats) => void
+  onH265Stats?: (stats: H265ClientStats) => void,
+  h265Preference: H265PlaybackPreference = 'hard'
 ): ControllerHandle {
   let hls: HlsPlayerHandle | undefined;
-  let h265: H265DirectHandle | undefined;
-  let h265Pthreads: H265PthreadsHandle | undefined;
-  let h265Simd: Jessibuca4SimdHandle | undefined;
+  let h265OptimizedWasm: H265OptimizedWasmHandle | undefined;
   let nativeHevc: NativeHevcMseHandle | undefined;
   let webcodecs: WebCodecsHandle | undefined;
-  let fallbackStarted = false;
+  let hlsStarted = false;
 
   const showHls = () => {
     h265Container.hidden = true;
@@ -35,16 +34,14 @@ export function startPlayer(
     video.hidden = false;
   };
 
-  const fallbackToHls = (reason: string) => {
-    if (fallbackStarted) return;
-    fallbackStarted = true;
-    h265?.destroy();
-    h265Pthreads?.destroy();
-    h265Simd?.destroy();
+  const startCompatHls = (reason: string) => {
+    if (hlsStarted) return;
+    hlsStarted = true;
+    h265OptimizedWasm?.destroy();
     nativeHevc?.destroy();
     webcodecs?.destroy();
     onMode('hls');
-    onStatus(`${reason}，切换轻量播放`);
+    onStatus(`${reason}，启动兼容播放`);
     showHls();
     void startHlsFallback(stream, video, onStatus).then((player) => {
       hls = player;
@@ -54,53 +51,34 @@ export function startPlayer(
   };
 
   const h265DirectUrl = h265PlaybackUrl(stream);
-  const startBrowserH265 = (reason?: string) => {
+  const startBrowserH265 = () => {
     nativeHevc?.destroy();
     nativeHevc = undefined;
-    if (reason) onStatus(`${reason}，切换浏览器兼容解码...`);
 
-    if (isH265(stream) && h265DirectUrl && canTryH265Pthreads()) {
+    if (isH265(stream) && h265DirectUrl && canTryH265OptimizedWasm()) {
       onMode('h265');
       video.hidden = true;
-      canvas.hidden = true;
-      h265Container.hidden = false;
-      h265Pthreads = startH265PthreadsPlayer(
-        h265Container,
+      canvas.hidden = false;
+      h265Container.hidden = true;
+      h265OptimizedWasm = startH265OptimizedWasmPlayer(
+        canvas,
         h265DirectUrl,
-        { width: stream.source_width, height: stream.source_height, fps: null },
+        { width: stream.source_width, height: stream.source_height },
         onStatus,
-        fallbackToHls,
+        (fallbackReason) => {
+          onStatus(`${fallbackReason}。当前选择软解，不自动启动服务器转码`, false);
+        },
         onH265Stats
       );
-      return true;
-    }
-
-    if (isH265(stream) && h265DirectUrl && shouldUseJv4Simd(stream) && canTryJessibuca4Simd()) {
-      onMode('h265');
-      video.hidden = true;
-      canvas.hidden = true;
-      h265Container.hidden = false;
-      h265Simd = startJessibuca4SimdPlayer(h265Container, h265DirectUrl, onStatus, fallbackToHls, (stats) => {
-        onH265Stats?.(stats);
-      }, {
-        preferVideoFrameRenderer: !isHttpFlv(stream.input_url)
-      });
-      return true;
-    }
-
-    if (isH265(stream) && h265DirectUrl && canTryH265Direct()) {
-      onMode('h265');
-      video.hidden = true;
-      canvas.hidden = true;
-      h265Container.hidden = false;
-      h265 = startH265DirectPlayer(h265Container, h265DirectUrl, onStatus, fallbackToHls, onH265Stats);
       return true;
     }
 
     return false;
   };
 
-  if (isH265(stream) && canTryNativeHevcMse()) {
+  if (isH265(stream) && h265Preference === 'compat') {
+    startCompatHls('已选择兼容转码');
+  } else if (isH265(stream) && h265Preference === 'hard' && canTryNativeHevcMse()) {
     onMode('native-hevc');
     h265Container.hidden = true;
     canvas.hidden = true;
@@ -110,36 +88,38 @@ export function startPlayer(
       `/fmp4/${stream.stream_id}.mp4`,
       onStatus,
       (reason) => {
-        if (!startBrowserH265(reason)) fallbackToHls(reason);
+        onStatus(`${reason}。当前选择硬解，不自动切换软解或服务器转码`, false);
       },
       onH265Stats
     );
+  } else if (isH265(stream) && h265Preference === 'soft' && startBrowserH265()) {
+    // Optimized browser-side WASM H265 soft decode started.
+  } else if (isH265(stream) && h265Preference === 'hard') {
+    onMode('native-hevc');
+    h265Container.hidden = true;
+    canvas.hidden = true;
+    video.hidden = false;
+    onStatus('当前浏览器不可用原生 HEVC 硬解，请手动选择软解或兼容转码', false);
   } else if (isH265(stream) && startBrowserH265()) {
-    // Browser-side H265 fallback started.
+    // Soft decode fallback for legacy callers.
   } else if (stream.play_mode === 'webcodecs' && canUseWebCodecs()) {
     onMode('webcodecs');
     video.hidden = true;
     canvas.hidden = false;
     h265Container.hidden = true;
-    webcodecs = startWebCodecsPlayer({ wsUrl: stream.ws_url, canvas, onStatus, onFallback: fallbackToHls });
+    webcodecs = startWebCodecsPlayer({ wsUrl: stream.ws_url, canvas, onStatus, onFallback: startCompatHls });
   } else {
-    fallbackToHls(isH265(stream) ? 'H265 原始播放不可用' : 'WebCodecs 不可用');
+    startCompatHls(isH265(stream) ? 'H265 原始播放不可用' : 'WebCodecs 不可用');
   }
 
   return {
     destroy() {
       webcodecs?.destroy();
       nativeHevc?.destroy();
-      h265Simd?.destroy();
-      h265Pthreads?.destroy();
-      h265?.destroy();
+      h265OptimizedWasm?.destroy();
       hls?.destroy();
     }
   };
-}
-
-function shouldUseJv4Simd(stream: StreamResponse) {
-  return isHttpFlv(stream.input_url);
 }
 
 async function startHlsFallback(
@@ -170,15 +150,4 @@ function h265PlaybackUrl(stream: StreamResponse) {
   // Always prefer the same-origin raw FLV gateway. Direct external HTTPS-FLV
   // often fails under COEP/CORP/CORS, which incorrectly triggers H264 fallback.
   return stream.raw_flv_url ?? stream.input_url;
-}
-
-function isHttpFlv(url: string | null | undefined) {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
-      && parsed.pathname.toLowerCase().endsWith('.flv');
-  } catch {
-    return false;
-  }
 }

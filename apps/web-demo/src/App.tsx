@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createStream, deleteStream, getStreamStatus, waitForHlsReady, StreamResponse, StreamStatus } from './api';
-import { ActiveMode, ControllerHandle, startPlayer } from './players/PlayerController';
+import { ActiveMode, ControllerHandle, H265PlaybackPreference, startPlayer } from './players/PlayerController';
 import { H265ClientStats } from './players/H265DirectPlayer';
 import './styles.css';
 
@@ -87,6 +87,8 @@ function formatCodec(value: string | null | undefined) {
 }
 
 function formatPipeline(value: string | null | undefined) {
+  if (value === 'optimized-wasm-worker-video-frame') return '优化软解';
+  if (value?.startsWith('optimized-wasm-')) return '优化软解';
   if (value === 'main-webgl') return 'WebGL 渲染';
   if (value === 'worker-2d') return 'Worker 解码';
   if (value === 'worker-canvas') return 'Worker 绘制';
@@ -213,6 +215,7 @@ function App() {
   const [ok, setOk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<ActiveMode | 'idle'>('idle');
+  const [h265Preference, setH265Preference] = useState<H265PlaybackPreference>('hard');
   const [details, setDetails] = useState<StreamStatus | null>(null);
   const [h265Stats, setH265Stats] = useState<H265ClientStats>({ fps: null, bitrateKbps: null });
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -292,7 +295,7 @@ function App() {
     return () => window.clearInterval(timer);
   }, [stream, mode]);
 
-  async function start() {
+  async function start(preferenceOverride: H265PlaybackPreference = h265Preference) {
     if (!url.trim()) {
       setStatus('请先输入 RTSP/RTMP/HTTP-FLV 地址');
       setOk(false);
@@ -338,7 +341,7 @@ function App() {
         } else if (nextOk === false) {
           setOk(videoLooksAlive(videoRef.current));
         }
-      }, setH265Stats);
+      }, setH265Stats, preferenceOverride);
       setStream(created);
       const nextDetails = await getStreamStatus(created.stream_id);
       setDetails(nextDetails);
@@ -350,6 +353,14 @@ function App() {
       setOk(false);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function switchH265Preference(nextPreference: H265PlaybackPreference) {
+    if (nextPreference === h265Preference) return;
+    setH265Preference(nextPreference);
+    if (isRunning && !busy) {
+      window.setTimeout(() => void start(nextPreference), 0);
     }
   }
 
@@ -406,6 +417,32 @@ function App() {
               <span>视频地址</span>
               <input id="stream-url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="粘贴视频流地址" spellCheck={false} />
             </label>
+            <div className="decode-switch" role="group" aria-label="H265 解码方式">
+              <button
+                type="button"
+                className={h265Preference === 'hard' ? 'active' : ''}
+                onClick={() => switchH265Preference('hard')}
+                disabled={busy}
+              >
+                硬解
+              </button>
+              <button
+                type="button"
+                className={h265Preference === 'soft' ? 'active' : ''}
+                onClick={() => switchH265Preference('soft')}
+                disabled={busy}
+              >
+                软解
+              </button>
+              <button
+                type="button"
+                className={h265Preference === 'compat' ? 'active' : ''}
+                onClick={() => switchH265Preference('compat')}
+                disabled={busy}
+              >
+                兼容
+              </button>
+            </div>
             <button type="submit" disabled={busy}>{busy ? '连接中' : isRunning ? '切换' : '播放'}</button>
             <button type="button" className="secondary" onClick={() => void stop()} disabled={busy || !isRunning}>停止</button>
           </form>
@@ -498,6 +535,7 @@ function App() {
 
         <div className="visually-hidden" aria-hidden="true">
           <span data-testid="mode-label">{modeLabel(mode)}</span>
+          <span data-testid="h265-preference">{h265Preference}</span>
           <span data-testid="player-status">{status}</span>
         </div>
 

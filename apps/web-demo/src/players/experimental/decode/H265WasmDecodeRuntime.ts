@@ -118,6 +118,7 @@ export class H265WasmDecodeRuntime {
     this.options.onStatus?.('正在加载 WASM H265 解码核心...');
     const jv4 = await loadJv4();
     if (this.destroyed) return;
+    this.options.onStatus?.('WASM H265 解码核心已加载');
 
     if (this.options.preferDirectWorkerCanvas) {
       this.profiler = new PlaybackProfiler('worker-direct-canvas');
@@ -144,6 +145,7 @@ export class H265WasmDecodeRuntime {
       });
       await this.turbo.start();
       if (this.destroyed) return;
+      this.options.onStatus?.('Worker 渲染链路已就绪');
     }
 
     this.options.onStatus?.('正在初始化 SIMD 软解码...');
@@ -157,6 +159,7 @@ export class H265WasmDecodeRuntime {
     this.bindDecoderEvents(this.decoder);
     await this.decoder.initialize();
     if (this.destroyed) return;
+    this.options.onStatus?.('SIMD 软解码器已初始化');
 
     this.options.onStatus?.('正在连接 raw FLV...');
     this.conn = new jv4.HttpConnection(this.options.rawUrl, {
@@ -165,6 +168,7 @@ export class H265WasmDecodeRuntime {
     });
     await this.conn.connect();
     if (this.destroyed) return;
+    this.options.onStatus?.('raw FLV 已连接，准备解封装');
 
     this.startDemux(jv4, this.conn, this.activeFormat);
   }
@@ -204,6 +208,7 @@ export class H265WasmDecodeRuntime {
     }), { signal: this.abort.signal }).catch((err) => {
       if (!this.destroyed) this.options.onError?.(err instanceof Error ? err.message : '视频流读取失败');
     });
+    this.options.onStatus?.(`视频包读取已启动 (${format})`);
 
     // PULL 模式下必须消费音频，否则部分流会被音频 reader 卡住。
     void demuxer.audioReadable?.pipeTo(new WritableStream<EncodedAudioChunkInit>({
@@ -589,8 +594,20 @@ function normalizeDecoderConfig(config: VideoDecoderConfig, format: 'avcc' | 'an
 }
 
 function loadJv4(): Promise<Jv4Module> {
-  loadingJv4 ??= import(/* @vite-ignore */ vendorModuleUrl) as Promise<Jv4Module>;
+  loadingJv4 ??= importPublicModule<Jv4Module>(vendorModuleUrl);
   return loadingJv4;
+}
+
+async function importPublicModule<T>(url: string): Promise<T> {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`加载 H265 SIMD 模块失败: ${response.status}`);
+  const source = await response.text();
+  const objectUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+  try {
+    return await import(/* @vite-ignore */ objectUrl) as T;
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+  }
 }
 
 function isYuvFrame(value: unknown): value is YuvLikeFrame {

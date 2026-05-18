@@ -28,6 +28,8 @@ export default defineConfig({
     proxy: {
       '/api': gatewayTarget,
       '/ws': { target: wsTarget, ws: true },
+      '/raw-flv': gatewayTarget,
+      '/fmp4': gatewayTarget,
       '/hls': gatewayTarget,
       '/zlm': gatewayTarget
     }

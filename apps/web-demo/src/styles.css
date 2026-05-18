@@ -111,7 +111,7 @@ h1 {
 
 .url-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 76px 76px;
+  grid-template-columns: minmax(0, 1fr) 198px 76px 76px;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -188,6 +188,43 @@ h1 {
   box-shadow: 0 10px 22px rgba(15, 23, 42, .08);
 }
 .url-form button:disabled { cursor: not-allowed; opacity: .45; }
+
+.decode-switch {
+  height: 46px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: #f1f5f9;
+}
+
+.decode-switch button {
+  height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  font: 800 13px/1 "PingFang SC", "Segoe UI", sans-serif;
+}
+
+.decode-switch button.active {
+  color: #fff;
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .18), inset 0 1px 0 rgba(255,255,255,.14);
+}
+
+.decode-switch button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.decode-switch button.active:hover:not(:disabled) {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .2), inset 0 1px 0 rgba(255,255,255,.14);
+}
 
 .quick-stats {
   display: flex;
@@ -516,7 +553,7 @@ h1 {
   body { overflow: auto; }
   .page-shell { width: min(100% - 20px, 1480px); height: auto; min-height: 100svh; padding: 10px 0; }
   .control-panel { grid-template-columns: 1fr; }
-  .url-form { grid-template-columns: minmax(0, 1fr) 76px 76px; }
+  .url-form { grid-template-columns: minmax(0, 1fr) 198px 76px 76px; }
   .quick-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .console-card { min-height: 72svh; grid-template-rows: auto minmax(360px, 1fr); }
 }
@@ -526,6 +563,7 @@ h1 {
   .topbar-status { justify-content: center; }
   .url-form { grid-template-columns: 1fr 1fr; }
   .url-input-wrap { grid-column: 1 / -1; }
+  .decode-switch { grid-column: 1 / -1; }
   .quick-stats { grid-template-columns: 1fr; }
   .diagnostics-strip span:nth-child(2), .diagnostics-strip span:nth-child(3) { display: none; }
   .performance-panel { display: none; }
