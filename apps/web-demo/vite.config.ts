@@ -1,21 +1,30 @@
-import { defineConfig } from 'vite';
+/// <reference path="./config-env.d.ts" />
+
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 
 const gatewayTarget = process.env.VITE_GATEWAY_TARGET ?? 'http://127.0.0.1:5177';
 const webPort = Number(process.env.VITE_WEB_PORT ?? 5178);
 const wsTarget = gatewayTarget.replace(/^http/, 'ws');
+const buildExperiments = process.env.VITE_BUILD_EXPERIMENTS === '1';
+
+const input = {
+  main: resolve(__dirname, 'index.html'),
+  ...(buildExperiments
+    ? {
+        experimentalRuntime: resolve(__dirname, 'experimental-runtime.html'),
+        experimentalDemux: resolve(__dirname, 'experimental-demux.html'),
+        experimentalDecode: resolve(__dirname, 'experimental-decode.html')
+      }
+    : {})
+};
 
 export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        experimentalRuntime: resolve(__dirname, 'experimental-runtime.html'),
-        experimentalDemux: resolve(__dirname, 'experimental-demux.html'),
-        experimentalDecode: resolve(__dirname, 'experimental-decode.html')
-      }
+      input
     }
   },
   server: {

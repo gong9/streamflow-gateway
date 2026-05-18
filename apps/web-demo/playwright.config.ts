@@ -1,3 +1,5 @@
+/// <reference path="./config-env.d.ts" />
+
 import { defineConfig } from '@playwright/test';
 
 const webPort = process.env.VITE_WEB_PORT ?? '5178';

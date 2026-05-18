@@ -1,12 +1,14 @@
 import { startH264Fallback, StreamResponse, waitForHlsReady } from '../api';
 import { H265ClientStats } from './H265DirectPlayer';
-import { canTryH265OptimizedWasm, H265OptimizedWasmHandle, startH265OptimizedWasmPlayer } from './H265OptimizedWasmPlayer';
+import type { H265OptimizedWasmHandle } from './H265OptimizedWasmPlayer';
 import { startHlsPlayer, HlsPlayerHandle } from './HlsFallbackPlayer';
 import { canTryNativeHevcMse, NativeHevcMseHandle, startNativeHevcMsePlayer } from './NativeHevcMsePlayer';
 import { startWebCodecsPlayer, WebCodecsHandle, canUseWebCodecs } from './WebCodecsPlayer';
 
 export type ActiveMode = 'webcodecs' | 'h265' | 'native-hevc' | 'hls';
 export type H265PlaybackPreference = 'hard' | 'soft' | 'compat';
+
+const ENABLE_EXPERIMENTAL_H265_SOFT = import.meta.env.DEV || import.meta.env.VITE_ENABLE_EXPERIMENTAL_H265_SOFT === '1';
 
 export interface ControllerHandle {
   destroy(): void;
@@ -27,6 +29,7 @@ export function startPlayer(
   let nativeHevc: NativeHevcMseHandle | undefined;
   let webcodecs: WebCodecsHandle | undefined;
   let hlsStarted = false;
+  let destroyed = false;
 
   const showHls = () => {
     h265Container.hidden = true;
@@ -55,21 +58,34 @@ export function startPlayer(
     nativeHevc?.destroy();
     nativeHevc = undefined;
 
-    if (isH265(stream) && h265DirectUrl && canTryH265OptimizedWasm()) {
+    if (isH265(stream) && h265DirectUrl && ENABLE_EXPERIMENTAL_H265_SOFT) {
       onMode('h265');
       video.hidden = true;
       canvas.hidden = false;
       h265Container.hidden = true;
-      h265OptimizedWasm = startH265OptimizedWasmPlayer(
-        canvas,
-        h265DirectUrl,
-        { width: stream.source_width, height: stream.source_height },
-        onStatus,
-        (fallbackReason) => {
-          onStatus(`${fallbackReason}。当前选择软解，不自动启动服务器转码`, false);
-        },
-        onH265Stats
-      );
+      onStatus('正在加载 H265 软解模块...');
+      void import('./H265OptimizedWasmPlayer').then((module) => {
+        if (destroyed) return;
+        if (!module.canTryH265OptimizedWasm()) {
+          onStatus('当前浏览器不支持优化 WASM 软解。请手动选择兼容转码', false);
+          return;
+        }
+
+        h265OptimizedWasm = module.startH265OptimizedWasmPlayer(
+          canvas,
+          h265DirectUrl,
+          { width: stream.source_width, height: stream.source_height },
+          onStatus,
+          (fallbackReason) => {
+            onStatus(`${fallbackReason}。当前选择软解，不自动启动服务器转码`, false);
+          },
+          onH265Stats
+        );
+      }).catch((err) => {
+        if (!destroyed) {
+          onStatus(err instanceof Error ? err.message : 'H265 软解模块加载失败', false);
+        }
+      });
       return true;
     }
 
@@ -94,6 +110,12 @@ export function startPlayer(
     );
   } else if (isH265(stream) && h265Preference === 'soft' && startBrowserH265()) {
     // Optimized browser-side WASM H265 soft decode started.
+  } else if (isH265(stream) && h265Preference === 'soft') {
+    onMode('h265');
+    video.hidden = true;
+    canvas.hidden = false;
+    h265Container.hidden = true;
+    onStatus('当前构建未启用 H265 软解实验模块，请选择硬解或兼容转码', false);
   } else if (isH265(stream) && h265Preference === 'hard') {
     onMode('native-hevc');
     h265Container.hidden = true;
@@ -114,6 +136,7 @@ export function startPlayer(
 
   return {
     destroy() {
+      destroyed = true;
       webcodecs?.destroy();
       nativeHevc?.destroy();
       h265OptimizedWasm?.destroy();

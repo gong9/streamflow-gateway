@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "npm run build:vendor && vite",
     "build:vendor": "node scripts/build-jessibuca4-vendor.mjs",
-    "build": "npm run build:vendor && tsc -b && vite build",
-    "typecheck": "tsc --noEmit",
+    "build": "npm run build:vendor && tsc --noEmit -p tsconfig.ts6.json && vite build",
+    "build:experiments": "VITE_BUILD_EXPERIMENTS=1 VITE_ENABLE_EXPERIMENTAL_H265_SOFT=1 npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.ts6.json && tsc --noEmit -p tsconfig.config.json",
     "test": "vitest run",
     "test:e2e": "playwright test src/tests/e2e/playback.spec.ts",
     "test:e2e:flow": "playwright test src/tests/e2e/frontend-flow.spec.ts"

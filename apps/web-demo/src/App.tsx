@@ -6,6 +6,7 @@ import './styles.css';
 
 const DEFAULT_URL = '';
 const SHOW_DIAGNOSTICS = shouldShowDiagnostics();
+const ENABLE_EXPERIMENTAL_H265_SOFT = import.meta.env.DEV || import.meta.env.VITE_ENABLE_EXPERIMENTAL_H265_SOFT === '1';
 
 interface BrowserPerformanceStats {
   longTaskCount: number;
@@ -426,14 +427,16 @@ function App() {
               >
                 硬解
               </button>
-              <button
-                type="button"
-                className={h265Preference === 'soft' ? 'active' : ''}
-                onClick={() => switchH265Preference('soft')}
-                disabled={busy}
-              >
-                软解
-              </button>
+              {ENABLE_EXPERIMENTAL_H265_SOFT && (
+                <button
+                  type="button"
+                  className={h265Preference === 'soft' ? 'active' : ''}
+                  onClick={() => switchH265Preference('soft')}
+                  disabled={busy}
+                >
+                  软解
+                </button>
+              )}
               <button
                 type="button"
                 className={h265Preference === 'compat' ? 'active' : ''}
