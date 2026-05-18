@@ -11,6 +11,7 @@ const buildExperiments = process.env.VITE_BUILD_EXPERIMENTS === '1';
 
 const input = {
   main: resolve(__dirname, 'index.html'),
+  site: resolve(__dirname, 'site.html'),
   ...(buildExperiments
     ? {
         experimentalRuntime: resolve(__dirname, 'experimental-runtime.html'),
