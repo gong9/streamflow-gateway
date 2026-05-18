@@ -1,6 +1,9 @@
 import { chromium } from 'playwright';
 
-const url = 'https://example.test/live/h265.flv?codeType=H265';
+const url = process.env.STREAM_URL;
+if (!url) {
+  throw new Error('Set STREAM_URL to an HTTPS H265 FLV test stream before running this script.');
+}
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 page.on('console', msg => {

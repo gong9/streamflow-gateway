@@ -1,6 +1,9 @@
 import { chromium } from '@playwright/test';
 
-const url = 'rtmp://example.test/live/stream';
+const url = process.env.STREAM_URL;
+if (!url) {
+  throw new Error('Set STREAM_URL to an RTMP test stream before running this script.');
+}
 const browser = await chromium.launch({ headless: false, args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 page.on('console', msg => console.log(`[console:${msg.type()}] ${msg.text().slice(0, 1000)}`));

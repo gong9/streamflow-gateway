@@ -5,7 +5,7 @@ import { H265WasmDecodeRuntime } from './players/experimental/decode/H265WasmDec
 import { TurboPlaybackMetrics } from './players/experimental/types';
 import './experimental-decode.css';
 
-const defaultUrl = 'https://example.test/live/h265.flv?codeType=H265';
+const defaultUrl = import.meta.env.VITE_DEMO_STREAM_URL ?? '';
 type DecodeMode = 'main-thread-yuv' | 'worker-video-frame' | 'worker-direct-canvas' | 'scheduled-video-frame' | 'low-latency-scheduled' | 'packed-yuv';
 
 const decodeModes: Array<{ value: DecodeMode; label: string; description: string }> = [
